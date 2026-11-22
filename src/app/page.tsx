@@ -131,7 +131,7 @@ export default function HomePage() {
   useEffect(() => {
     const start = tripData.settings.startDate;
     const end = tripData.settings.endDate;
-    const cacheKey = `japantrip:climate:v4:${start}:${end}`;
+    const cacheKey = `japantrip:climate:v5:${start}:${end}`;
 
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {

@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const end = req.nextUrl.searchParams.get('end') ?? '2026-11-22';
 
   const days = getTripDays(start, end);
-  const cacheKey = `japantrip:climate:v4:${days[0]}:${days[days.length - 1]}`;
+  const cacheKey = `japantrip:climate:v5:${days[0]}:${days[days.length - 1]}`;
 
   const cached = await getRedisCache<ClimateDaySnapshot[]>(cacheKey);
   if (cached) {

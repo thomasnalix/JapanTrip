@@ -42,9 +42,16 @@ export const JAPAN_STATIONS: JapanStation[] = [
   { id: 'morioka', name: 'Morioka', region: 'Tohoku', lat: 39.70, lng: 141.15, momijiPeakDoy: 305 },
   { id: 'aomori', name: 'Aomori', region: 'Tohoku', lat: 40.82, lng: 140.75, momijiPeakDoy: 307 },
   { id: 'hakodate', name: 'Hakodate', region: 'Hokkaido', lat: 41.77, lng: 140.73, momijiPeakDoy: 304 },
+  { id: 'niseko', name: 'Niseko', region: 'Hokkaido Ouest', lat: 42.80, lng: 140.68, momijiPeakDoy: 295 },
   { id: 'sapporo', name: 'Sapporo', region: 'Hokkaido', lat: 43.06, lng: 141.35, momijiPeakDoy: 300 },
   { id: 'asahikawa', name: 'Asahikawa', region: 'Hokkaido', lat: 43.77, lng: 142.36, momijiPeakDoy: 292 },
-  { id: 'wakkanai', name: 'Wakkanai', region: 'Hokkaido', lat: 45.41, lng: 141.67, momijiPeakDoy: 290 },
+  { id: 'daisetsuzan', name: 'Daisetsuzan', region: 'Hokkaido Centre', lat: 43.66, lng: 142.85, momijiPeakDoy: 276 },
+  { id: 'kushiro', name: 'Kushiro', region: 'Hokkaido Est', lat: 42.98, lng: 144.38, momijiPeakDoy: 297 },
+  { id: 'wakkanai', name: 'Wakkanai', region: 'Hokkaido Nord', lat: 45.41, lng: 141.67, momijiPeakDoy: 290 },
+  { id: 'hakuba', name: 'Hakuba', region: 'Alpes Nord', lat: 36.70, lng: 137.86, momijiPeakDoy: 299 },
+  { id: 'tateyama', name: 'Tateyama', region: 'Alpes', lat: 36.58, lng: 137.60, momijiPeakDoy: 296 },
+  { id: 'yuzawa', name: 'Yuzawa', region: 'Niigata Montagne', lat: 36.93, lng: 138.81, momijiPeakDoy: 305 },
+  { id: 'zao', name: 'Zao', region: 'Tohoku Montagne', lat: 38.14, lng: 140.44, momijiPeakDoy: 298 },
 ];
 
 export interface LayerMeta {
@@ -88,12 +95,12 @@ export const WEATHER_LAYERS: Record<WeatherLayerType, LayerMeta> = {
     label: 'Neige',
     shortLabel: 'Neige',
     unit: 'cm',
-    description: 'Cumul journalier de neige (Hokkaido & Alpes japonaises)',
+    description: 'Manteau neigeux estimé au sol (cumul 14j corrigé de la fonte)',
     stops: [
       { label: '0 cm', color: '#CBD5E1' },
-      { label: '2 cm', color: '#7DD3FC' },
-      { label: '8 cm', color: '#38BDF8' },
-      { label: '≥ 20 cm', color: '#1D4ED8' },
+      { label: '3 cm', color: '#7DD3FC' },
+      { label: '15 cm', color: '#38BDF8' },
+      { label: '≥ 35 cm', color: '#1D4ED8' },
     ],
   },
   precipitation: {
@@ -186,9 +193,9 @@ export function getLayerColor(
     }
     case 'snow': {
       const s = station.snowfallCm;
-      if (s <= 0.1) return '#CBD5E1';
-      if (s < 3) return '#7DD3FC';
-      if (s < 10) return '#38BDF8';
+      if (s < 0.5) return '#CBD5E1';
+      if (s < 5) return '#7DD3FC';
+      if (s < 20) return '#38BDF8';
       return '#1D4ED8';
     }
     case 'precipitation': {
@@ -292,6 +299,20 @@ function shiftDateToYear(dateStr: string, targetYear: number): string {
   return `${targetYear}-${m}-${safeDay}`;
 }
 
+function shiftDateWithOffset(
+  dateStr: string,
+  targetYear: number,
+  offsetDays: number
+): string {
+  const shifted = shiftDateToYear(dateStr, targetYear);
+  const d = parseISODate(shifted);
+  if (!d) return shifted;
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function buildMomijiOnlySnapshots(dates: string[]): ClimateDaySnapshot[] {
   return dates.map((date) => ({
     date,
@@ -318,9 +339,10 @@ function buildMomijiOnlySnapshots(dates: string[]): ClimateDaySnapshot[] {
 }
 
 /**
- * Fetch daily weather for all 28 Japanese stations across `dates` from Open-Meteo in ONE single HTTP call:
+ * Fetch daily weather for all 35 Japanese stations (coastal + alpine) from Open-Meteo in ONE single HTTP call:
  * - If within the next 14 days: live 14-day forecast.
- * - Otherwise: 10-year historical average (e.g. 2016–2025) averaged day-by-day (MM-DD).
+ * - Otherwise: 10-year historical average (e.g. 2016–2025) averaged day-by-day (MM-DD),
+ *   including a 14-day snowpack accumulation-minus-melt calculation.
  */
 export async function fetchJapanClimateSeries(
   dates: string[]
@@ -349,9 +371,10 @@ export async function fetchJapanClimateSeries(
       : now.getUTCFullYear() - 1;
   const startArchiveYear = endArchiveYear - 9;
 
+  // Start 14 days earlier for archive so Day 1 already has trailing snowpack accumulation
   const queryStart = useForecast
     ? dates[0]
-    : shiftDateToYear(dates[0], startArchiveYear);
+    : shiftDateWithOffset(dates[0], startArchiveYear, -14);
   const queryEnd = useForecast
     ? dates[dates.length - 1]
     : shiftDateToYear(dates[dates.length - 1], endArchiveYear);
@@ -375,7 +398,7 @@ export async function fetchJapanClimateSeries(
 
   try {
     const res = await fetch(`${baseUrl}?${params.toString()}`, {
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(14000),
     });
     if (!res.ok) {
       return buildMomijiOnlySnapshots(dates);
@@ -425,7 +448,7 @@ export async function fetchJapanClimateSeries(
       }));
     }
 
-    // Aggregate 10 years by calendar day (MM-DD) for each station
+    // Aggregate 10 years by calendar day (MM-DD) including trailing snowpack balance
     const stationDayMaps = list.map((entry) => {
       const map = new Map<
         string,
@@ -441,10 +464,23 @@ export async function fetchJapanClimateSeries(
       const daily = entry.daily;
       if (!daily?.time) return map;
 
+      let snowpack = 0;
+      let prevTimeMs = 0;
       for (let i = 0; i < daily.time.length; i++) {
-        const mmdd = daily.time[i].slice(5);
+        const curMs = Date.parse(daily.time[i]);
+        // Reset rolling snowpack when jumping across a year boundary (> 40 days gap)
+        if (prevTimeMs && curMs - prevTimeMs > 40 * 86_400_000) {
+          snowpack = 0;
+        }
+        prevTimeMs = curMs;
+
         const tMean = daily.temperature_2m_mean?.[i];
         if (tMean === null || tMean === undefined) continue;
+        const freshSnow = daily.snowfall_sum?.[i] ?? 0;
+        const melt = tMean > 1.5 ? (tMean - 1.5) * 0.55 : 0;
+        snowpack = Math.max(0, snowpack * 0.96 + freshSnow - melt);
+
+        const mmdd = daily.time[i].slice(5);
         const cur = map.get(mmdd) ?? {
           mean: 0,
           min: 0,
@@ -457,7 +493,7 @@ export async function fetchJapanClimateSeries(
         cur.min += daily.temperature_2m_min?.[i] ?? tMean;
         cur.max += daily.temperature_2m_max?.[i] ?? tMean;
         cur.precip += daily.precipitation_sum?.[i] ?? 0;
-        cur.snow += daily.snowfall_sum?.[i] ?? 0;
+        cur.snow += snowpack;
         cur.count += 1;
         map.set(mmdd, cur);
       }

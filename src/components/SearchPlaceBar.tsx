@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Loader2, MapPin, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { CATEGORY_ICONS } from '@/lib/icons';
+import { isInsideJapan } from '@/lib/japan-bounds';
 import { CATEGORY_META, type SearchPlaceResult } from '@/lib/schemas';
 
 interface SearchPlaceBarProps {
@@ -42,6 +43,31 @@ export function SearchPlaceBar({
       setResults([]);
       setLoading(false);
       return;
+    }
+
+    // Instant match if user pastes Google Maps GPS coordinates: "34.6612, 135.5059"
+    const coordMatch = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.exec(
+      trimmed
+    );
+    if (coordMatch) {
+      const lat = Number(coordMatch[1]);
+      const lng = Number(coordMatch[2]);
+      if (isInsideJapan(lat, lng)) {
+        setResults([
+          {
+            id: `coords-${lat}-${lng}`,
+            name: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+            description: 'Coordonnées GPS exactes (Japon)',
+            address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            lat,
+            lng,
+            suggestedCategory: 'other',
+          },
+        ]);
+        setOpen(true);
+        setLoading(false);
+        return;
+      }
     }
 
     const controller = new AbortController();

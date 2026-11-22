@@ -8,6 +8,7 @@ interface PhotonFeature {
   properties?: {
     osm_id?: number;
     name?: string;
+    housenumber?: string;
     city?: string;
     state?: string;
     county?: string;
@@ -96,20 +97,47 @@ function guessCategory(key?: string, value?: string): Category {
   return 'other';
 }
 
-/** Build fallback English/Romanized query variants when a natural POI phrase has descriptive words. */
+/**
+ * Normalize Google Maps style queries (e.g. "4 Chome-17-3 Nipponbashi, Naniwa Ward, Osaka"
+ * or descriptive POI words like "open-air onsen") into OpenStreetMap-friendly variants.
+ */
 function buildQueryVariants(raw: string): string[] {
-  const variants = [raw];
-  const stripped = raw
+  const variants: string[] = [];
+
+  // 1) Normalize Google Maps Japanese addresses: "4 Chome-17-3 Nipponbashi, Naniwa Ward, Osaka"
+  const noWard = raw
+    .replace(/\b(Ward|City|Prefecture)\b/gi, '')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const chomeMatch = /\b(\d+)\s*[-\s]?Chome(?:[-\s]+(\d+)(?:[-\s]+(\d+))?)?\s+([^,]+)(?:,\s*(.*))?/i.exec(
+    noWard
+  );
+  if (chomeMatch) {
+    const [, chome, ban, go, district, rest] = chomeMatch;
+    const nums = [chome, ban, go].filter(Boolean).join('-');
+    const tail = rest ? `, ${rest}` : '';
+    variants.push(`${nums} ${district.trim()}${tail}`);
+    variants.push(`${district.trim()} ${chome}${tail}`);
+  }
+
+  variants.push(raw);
+  if (noWard !== raw) variants.push(noWard);
+
+  // 2) Strip descriptive English adjectives for POIs
+  const stripped = noWard
     .replace(/\b(open[-\s]?air|outdoor|indoor|free|public|famous|best)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (stripped && stripped.toLowerCase() !== raw.toLowerCase()) {
+  if (stripped && !variants.includes(stripped)) {
     variants.push(stripped);
   }
   if (/\bonsen\b/i.test(stripped)) {
     variants.push(stripped.replace(/\bonsen\b/gi, 'hot spring'));
   }
-  return variants.slice(0, 3);
+
+  return [...new Set(variants)].slice(0, 4);
 }
 
 async function queryPhoton(q: string): Promise<SearchPlaceResult[]> {
@@ -138,8 +166,9 @@ async function queryPhoton(q: string): Promise<SearchPlaceResult[]> {
         if (!isInsideJapan(lat, lng)) return null;
         if (p.countrycode && p.countrycode.toUpperCase() !== 'JP') return null;
 
-        const name = p.name || p.street || p.city || q;
-        const addressParts = [p.street, p.city || p.county, p.state]
+        const streetPart = [p.housenumber, p.street].filter(Boolean).join(' ');
+        const name = p.name || streetPart || p.city || q;
+        const addressParts = [streetPart, p.city || p.county, p.state]
           .filter(Boolean)
           .filter((v, i, arr) => arr.indexOf(v) === i);
         const address = addressParts.join(', ') || 'Japan';
@@ -228,7 +257,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
-  const cacheKey = `geocode:v2:${q.toLowerCase()}`;
+  const cacheKey = `geocode:v3:${q.toLowerCase()}`;
   const cached = getMemoryCache<SearchPlaceResult[]>(cacheKey);
   if (cached) {
     return NextResponse.json(
