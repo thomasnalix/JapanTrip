@@ -338,30 +338,41 @@ export function JapanMap({
           duration: 0,
         });
 
+        // Place prefecture zoning beneath map city/place labels so text stays crisp
+        const firstSymbolId = map
+          .getStyle()
+          .layers?.find((l) => l.type === 'symbol')?.id;
+
         // 47-Prefecture regional zoning choropleth
         map.addSource(ZONING_SOURCE_ID, {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
         });
-        map.addLayer({
-          id: ZONING_FILL_LAYER_ID,
-          type: 'fill',
-          source: ZONING_SOURCE_ID,
-          paint: {
-            'fill-color': ['get', 'color'],
-            'fill-opacity': 0.56,
+        map.addLayer(
+          {
+            id: ZONING_FILL_LAYER_ID,
+            type: 'fill',
+            source: ZONING_SOURCE_ID,
+            paint: {
+              'fill-color': ['get', 'color'],
+              'fill-opacity': 0.58,
+            },
           },
-        });
-        map.addLayer({
-          id: ZONING_LINE_LAYER_ID,
-          type: 'line',
-          source: ZONING_SOURCE_ID,
-          paint: {
-            'line-color': '#FFFFFF',
-            'line-width': 0.9,
-            'line-opacity': 0.85,
+          firstSymbolId
+        );
+        map.addLayer(
+          {
+            id: ZONING_LINE_LAYER_ID,
+            type: 'line',
+            source: ZONING_SOURCE_ID,
+            paint: {
+              'line-color': '#FFFFFF',
+              'line-width': 1,
+              'line-opacity': 0.85,
+            },
           },
-        });
+          firstSymbolId
+        );
 
         // Trip planning routes (curved for flights, straight for ground/ferry)
         map.addSource(ROUTES_SOURCE_ID, {

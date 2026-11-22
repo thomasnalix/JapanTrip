@@ -101,12 +101,14 @@ export function PlanningPanel({
             {climateSnapshot && (
               <div className="text-[10px] text-zinc-400">
                 {activeLayer === 'momiji'
-                  ? 'Zonage par préfecture — Modèle saisonnier Momiji'
+                  ? 'Zonage par préfecture — Calendrier JMA + températures 10 ans'
                   : climateSnapshot.source === 'forecast'
                     ? 'Zonage par préfecture — Prévisions Open-Meteo'
-                    : climateSnapshot.source === 'archive'
-                      ? `Zonage par préfecture — Historique Open-Meteo (${climateSnapshot.referenceYear})`
-                      : 'Zonage par préfecture — Normales saisonnières'}
+                    : climateSnapshot.source === 'archive-10y'
+                      ? `Zonage par préfecture — Moyenne 10 ans Open-Meteo (${climateSnapshot.referenceYear - 9}–${climateSnapshot.referenceYear})`
+                      : climateSnapshot.source === 'archive'
+                        ? `Zonage par préfecture — Historique Open-Meteo (${climateSnapshot.referenceYear})`
+                        : 'Zonage par préfecture — Données météo indisponibles'}
               </div>
             )}
           </div>

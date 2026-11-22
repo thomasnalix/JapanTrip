@@ -131,7 +131,7 @@ export default function HomePage() {
   useEffect(() => {
     const start = tripData.settings.startDate;
     const end = tripData.settings.endDate;
-    const cacheKey = `japantrip:climate:v2:${start}:${end}`;
+    const cacheKey = `japantrip:climate:v4:${start}:${end}`;
 
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {
@@ -140,7 +140,10 @@ export default function HomePage() {
           savedAt: number;
           snapshots: ClimateDaySnapshot[];
         };
-        if (Date.now() - parsed.savedAt < 6 * 60 * 60 * 1000) {
+        if (
+          Date.now() - parsed.savedAt < 6 * 60 * 60 * 1000 &&
+          parsed.snapshots[0]?.source !== 'normals'
+        ) {
           setClimateSeries(parsed.snapshots);
           return;
         }
@@ -156,13 +159,15 @@ export default function HomePage() {
       .then((json: { snapshots?: ClimateDaySnapshot[] }) => {
         if (cancelled || !json.snapshots) return;
         setClimateSeries(json.snapshots);
-        try {
-          localStorage.setItem(
-            cacheKey,
-            JSON.stringify({ savedAt: Date.now(), snapshots: json.snapshots })
-          );
-        } catch {
-          // Ignore quota errors
+        if (json.snapshots[0]?.source !== 'normals') {
+          try {
+            localStorage.setItem(
+              cacheKey,
+              JSON.stringify({ savedAt: Date.now(), snapshots: json.snapshots })
+            );
+          } catch {
+            // Ignore quota errors
+          }
         }
       })
       .catch(() => {})

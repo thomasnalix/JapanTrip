@@ -288,7 +288,7 @@ export interface ClimateStationValue {
 
 export interface ClimateDaySnapshot {
   date: string;
-  source: 'forecast' | 'archive' | 'normals';
+  source: 'forecast' | 'archive-10y' | 'archive' | 'normals';
   referenceYear: number;
   stations: ClimateStationValue[];
 }

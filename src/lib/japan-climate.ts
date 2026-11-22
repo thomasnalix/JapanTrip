@@ -119,20 +119,32 @@ export function dayOfYear(dateStr: string): number {
 }
 
 /**
- * Compute realistic Momiji progression (0..100) for a Japanese station on a given calendar date.
- * - Peak window lasts roughly +/- 9 days around `momijiPeakDoy`
- * - Turning phase starts ~22 days before peak
- * - Leaves drop ~18 days after peak
+ * Compute Momiji progression (0..100) combining JMA/Weathernews baseline peak dates
+ * with real 10-year autumn temperatures (daily mean & min thermal triggers).
  */
 export function computeMomijiForDate(
   station: JapanStation,
-  dateStr: string
+  dateStr: string,
+  tempMeanC?: number,
+  tempMinC?: number
 ): { score: number; phase: 'vert' | 'debut' | 'pic' | 'fin' } {
   if (station.momijiPeakDoy === null) {
     return { score: 0, phase: 'vert' };
   }
   const doy = dayOfYear(dateStr);
-  const diff = doy - station.momijiPeakDoy;
+
+  // Phenological thermal shift: warm autumns (>15°C mean) delay peak; cool snaps (<8°C min) advance it slightly
+  let thermalShiftDays = 0;
+  if (tempMeanC !== undefined && tempMinC !== undefined) {
+    if (tempMeanC > 16.5 && doy > 280) {
+      thermalShiftDays = Math.min(8, Math.round((tempMeanC - 16.5) * 1.4));
+    } else if (tempMinC < 6 && tempMeanC < 11 && doy > 260) {
+      thermalShiftDays = -Math.min(5, Math.round((11 - tempMeanC) * 0.8));
+    }
+  }
+
+  const adjustedPeak = station.momijiPeakDoy + thermalShiftDays;
+  const diff = doy - adjustedPeak;
 
   if (diff < -24) {
     return { score: 5, phase: 'vert' };
@@ -174,14 +186,14 @@ export function getLayerColor(
     }
     case 'snow': {
       const s = station.snowfallCm;
-      if (s <= 0.1) return '#94A3B8';
-      if (s < 3) return '#60A5FA';
-      if (s < 10) return '#2563EB';
-      return '#1E3A8A';
+      if (s <= 0.1) return '#CBD5E1';
+      if (s < 3) return '#7DD3FC';
+      if (s < 10) return '#38BDF8';
+      return '#1D4ED8';
     }
     case 'precipitation': {
       const p = station.precipitationMm;
-      if (p < 1) return '#C9B396';
+      if (p < 0.5) return '#E7D8C3';
       if (p < 5) return '#64B5CD';
       if (p < 15) return '#2B7A9E';
       return '#1E3A8A';
@@ -306,8 +318,9 @@ function buildMomijiOnlySnapshots(dates: string[]): ClimateDaySnapshot[] {
 }
 
 /**
- * Fetch daily weather for all 28 Japanese stations across `dates` from Open-Meteo in one single batch call.
- * Uses forecast when dates are within the next 14 days, otherwise uses the most recent completed archive year.
+ * Fetch daily weather for all 28 Japanese stations across `dates` from Open-Meteo in ONE single HTTP call:
+ * - If within the next 14 days: live 14-day forecast.
+ * - Otherwise: 10-year historical average (e.g. 2016–2025) averaged day-by-day (MM-DD).
  */
 export async function fetchJapanClimateSeries(
   dates: string[]
@@ -319,25 +332,29 @@ export async function fetchJapanClimateSeries(
   if (!firstDate || !lastDate) return [];
 
   const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  );
   const maxForecastMs = todayUtc + 14 * 86_400_000;
 
   const useForecast =
     firstDate.getTime() >= todayUtc - 86_400_000 &&
     lastDate.getTime() <= maxForecastMs;
 
-  // For future/past trip planning outside the 14-day forecast window, query the previous year's exact calendar dates.
-  const archiveYear =
+  const endArchiveYear =
     lastDate.getTime() < todayUtc - 5 * 86_400_000
       ? lastDate.getUTCFullYear()
       : now.getUTCFullYear() - 1;
+  const startArchiveYear = endArchiveYear - 9;
 
   const queryStart = useForecast
     ? dates[0]
-    : shiftDateToYear(dates[0], archiveYear);
+    : shiftDateToYear(dates[0], startArchiveYear);
   const queryEnd = useForecast
     ? dates[dates.length - 1]
-    : shiftDateToYear(dates[dates.length - 1], archiveYear);
+    : shiftDateToYear(dates[dates.length - 1], endArchiveYear);
 
   const lats = JAPAN_STATIONS.map((s) => s.lat.toFixed(2)).join(',');
   const lngs = JAPAN_STATIONS.map((s) => s.lng.toFixed(2)).join(',');
@@ -358,7 +375,7 @@ export async function fetchJapanClimateSeries(
 
   try {
     const res = await fetch(`${baseUrl}?${params.toString()}`, {
-      signal: AbortSignal.timeout(9000),
+      signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) {
       return buildMomijiOnlySnapshots(dates);
@@ -372,22 +389,93 @@ export async function fetchJapanClimateSeries(
       return buildMomijiOnlySnapshots(dates);
     }
 
-    return dates.map((tripDate, idx) => {
-      const targetQueryDate = useForecast
-        ? tripDate
-        : shiftDateToYear(tripDate, archiveYear);
+    if (useForecast) {
+      return dates.map((tripDate, idx) => ({
+        date: tripDate,
+        source: 'forecast',
+        referenceYear: firstDate.getUTCFullYear(),
+        stations: JAPAN_STATIONS.map((st, sIdx) => {
+          const daily = list[sIdx]?.daily;
+          const tIdx = daily?.time?.indexOf(tripDate) ?? idx;
+          const safeIdx =
+            tIdx >= 0 ? tIdx : Math.min(idx, (daily?.time?.length ?? 1) - 1);
+
+          const tempMean = daily?.temperature_2m_mean?.[safeIdx] ?? 0;
+          const tempMin = daily?.temperature_2m_min?.[safeIdx] ?? tempMean;
+          const tempMax = daily?.temperature_2m_max?.[safeIdx] ?? tempMean;
+          const precip = daily?.precipitation_sum?.[safeIdx] ?? 0;
+          const snow = daily?.snowfall_sum?.[safeIdx] ?? 0;
+          const momiji = computeMomijiForDate(st, tripDate, tempMean, tempMin);
+
+          return {
+            id: st.id,
+            name: st.name,
+            region: st.region,
+            lat: st.lat,
+            lng: st.lng,
+            tempMeanC: Math.round(tempMean * 10) / 10,
+            tempMinC: Math.round(tempMin * 10) / 10,
+            tempMaxC: Math.round(tempMax * 10) / 10,
+            precipitationMm: Math.round(precip * 10) / 10,
+            snowfallCm: Math.round(snow * 10) / 10,
+            momijiScore: momiji.score,
+            momijiPhase: momiji.phase,
+          };
+        }),
+      }));
+    }
+
+    // Aggregate 10 years by calendar day (MM-DD) for each station
+    const stationDayMaps = list.map((entry) => {
+      const map = new Map<
+        string,
+        {
+          mean: number;
+          min: number;
+          max: number;
+          precip: number;
+          snow: number;
+          count: number;
+        }
+      >();
+      const daily = entry.daily;
+      if (!daily?.time) return map;
+
+      for (let i = 0; i < daily.time.length; i++) {
+        const mmdd = daily.time[i].slice(5);
+        const tMean = daily.temperature_2m_mean?.[i];
+        if (tMean === null || tMean === undefined) continue;
+        const cur = map.get(mmdd) ?? {
+          mean: 0,
+          min: 0,
+          max: 0,
+          precip: 0,
+          snow: 0,
+          count: 0,
+        };
+        cur.mean += tMean;
+        cur.min += daily.temperature_2m_min?.[i] ?? tMean;
+        cur.max += daily.temperature_2m_max?.[i] ?? tMean;
+        cur.precip += daily.precipitation_sum?.[i] ?? 0;
+        cur.snow += daily.snowfall_sum?.[i] ?? 0;
+        cur.count += 1;
+        map.set(mmdd, cur);
+      }
+      return map;
+    });
+
+    return dates.map((tripDate) => {
+      const mmdd = tripDate.slice(5) === '02-29' ? '02-28' : tripDate.slice(5);
 
       const stations: ClimateStationValue[] = JAPAN_STATIONS.map((st, sIdx) => {
-        const daily = list[sIdx]?.daily;
-        const tIdx = daily?.time?.indexOf(targetQueryDate) ?? idx;
-        const safeIdx = tIdx >= 0 ? tIdx : Math.min(idx, (daily?.time?.length ?? 1) - 1);
-
-        const tempMean = daily?.temperature_2m_mean?.[safeIdx] ?? 0;
-        const tempMin = daily?.temperature_2m_min?.[safeIdx] ?? tempMean;
-        const tempMax = daily?.temperature_2m_max?.[safeIdx] ?? tempMean;
-        const precip = daily?.precipitation_sum?.[safeIdx] ?? 0;
-        const snow = daily?.snowfall_sum?.[safeIdx] ?? 0;
-        const momiji = computeMomijiForDate(st, tripDate);
+        const agg = stationDayMaps[sIdx]?.get(mmdd);
+        const n = agg?.count || 1;
+        const tempMean = agg ? agg.mean / n : 0;
+        const tempMin = agg ? agg.min / n : 0;
+        const tempMax = agg ? agg.max / n : 0;
+        const precip = agg ? agg.precip / n : 0;
+        const snow = agg ? agg.snow / n : 0;
+        const momiji = computeMomijiForDate(st, tripDate, tempMean, tempMin);
 
         return {
           id: st.id,
@@ -407,8 +495,8 @@ export async function fetchJapanClimateSeries(
 
       return {
         date: tripDate,
-        source: useForecast ? 'forecast' : 'archive',
-        referenceYear: useForecast ? firstDate.getUTCFullYear() : archiveYear,
+        source: 'archive-10y',
+        referenceYear: endArchiveYear,
         stations,
       };
     });
