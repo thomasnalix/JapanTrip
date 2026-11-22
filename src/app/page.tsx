@@ -45,6 +45,7 @@ export default function HomePage() {
   const [mode, setMode] = useState<AppMode>('activities');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
   const [pickOnMap, setPickOnMap] = useState(false);
+  const [repositioningActivity, setRepositioningActivity] = useState(false);
 
   const [activeActivity, setActiveActivity] = useState<{
     activity: Activity;
@@ -237,6 +238,60 @@ export default function HomePage() {
     });
   }
 
+  const handleMoveActivity = useCallback(
+    (id: string, lat: number, lng: number) => {
+      const author: Author = activeAuthor ?? 'Thomas';
+      const now = new Date().toISOString();
+      const existing = tripData.activities.find((a) => a.id === id);
+
+      if (existing) {
+        const updated: Activity = {
+          ...existing,
+          lat,
+          lng,
+          updatedBy: author,
+          updatedAt: now,
+          history: [
+            ...existing.history.slice(-14),
+            {
+              author,
+              action: 'updated',
+              at: now,
+              summary: 'Déplacé sur la carte',
+            },
+          ],
+        };
+        setTripData((prev) => ({
+          ...prev,
+          activities: prev.activities.map((a) => (a.id === id ? updated : a)),
+        }));
+        setActiveActivity((prev) =>
+          prev && prev.activity.id === id
+            ? { activity: updated, isNew: false }
+            : prev
+        );
+        void mutateTrip({ action: 'upsert_activity', activity: updated });
+        return;
+      }
+
+      setActiveActivity((prev) =>
+        prev && prev.activity.id === id
+          ? {
+              ...prev,
+              activity: {
+                ...prev.activity,
+                lat,
+                lng,
+                updatedBy: author,
+                updatedAt: now,
+              },
+            }
+          : prev
+      );
+    },
+    [activeAuthor, tripData.activities]
+  );
+
   const handleMapClickCoordinates = useCallback(
     (lat: number, lng: number) => {
       const author: Author = activeAuthor ?? 'Thomas';
@@ -244,6 +299,11 @@ export default function HomePage() {
       setPickOnMap(false);
 
       if (mode === 'activities') {
+        if (repositioningActivity && activeActivity) {
+          setRepositioningActivity(false);
+          handleMoveActivity(activeActivity.activity.id, lat, lng);
+          return;
+        }
         const draft: Activity = {
           id: crypto.randomUUID(),
           name: '',
@@ -281,7 +341,7 @@ export default function HomePage() {
         setActiveStepModal({ step: draft, isNew: true });
       }
     },
-    [activeAuthor, mode, activeDate]
+    [activeAuthor, mode, activeDate, repositioningActivity, activeActivity, handleMoveActivity]
   );
 
   function handleSaveActivity(updated: Activity, closeAfter = false) {
@@ -384,11 +444,19 @@ export default function HomePage() {
         activeLayer={activeLayer}
         climateSnapshot={currentClimateSnapshot}
         pickMode={pickOnMap}
+        pickBannerText={
+          repositioningActivity
+            ? 'Cliquez sur la carte pour déplacer ce point'
+            : undefined
+        }
         focusTarget={focusTarget}
         onMapClickCoordinates={handleMapClickCoordinates}
-        onSelectActivity={(act) =>
-          setActiveActivity({ activity: act, isNew: false })
-        }
+        onSelectActivity={(act) => {
+          setRepositioningActivity(false);
+          setPickOnMap(false);
+          setActiveActivity({ activity: act, isNew: false });
+        }}
+        onMoveActivity={handleMoveActivity}
         onSelectStep={(step) => {
           setActiveStepModal({ step, isNew: false });
           setFocusTarget({
@@ -616,9 +684,22 @@ export default function HomePage() {
           activity={activeActivity.activity}
           isNew={activeActivity.isNew}
           activeAuthor={activeAuthor ?? 'Thomas'}
+          isRepositioning={repositioningActivity && pickOnMap}
+          onToggleReposition={() => {
+            const next = !(repositioningActivity && pickOnMap);
+            setRepositioningActivity(next);
+            setPickOnMap(next);
+          }}
+          onFocusLocation={(lat, lng) =>
+            setFocusTarget({ lat, lng, zoom: 13.5, nonce: Date.now() })
+          }
           onSave={handleSaveActivity}
           onDelete={handleDeleteActivity}
-          onClose={() => setActiveActivity(null)}
+          onClose={() => {
+            setRepositioningActivity(false);
+            setPickOnMap(false);
+            setActiveActivity(null);
+          }}
         />
       )}
 

@@ -62,9 +62,11 @@ interface JapanMapProps {
   activeLayer: WeatherLayerType | null;
   climateSnapshot: ClimateDaySnapshot | null;
   pickMode: boolean;
+  pickBannerText?: string;
   focusTarget: MapFocusTarget | null;
   onMapClickCoordinates: (lat: number, lng: number) => void;
   onSelectActivity: (activity: Activity) => void;
+  onMoveActivity?: (id: string, lat: number, lng: number) => void;
   onSelectStep: (step: TripStep) => void;
 }
 
@@ -247,9 +249,11 @@ export function JapanMap({
   activeLayer,
   climateSnapshot,
   pickMode,
+  pickBannerText,
   focusTarget,
   onMapClickCoordinates,
   onSelectActivity,
+  onMoveActivity,
   onSelectStep,
 }: JapanMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -271,12 +275,14 @@ export function JapanMap({
   const pickModeRef = useRef(pickMode);
   const onClickCoordsRef = useRef(onMapClickCoordinates);
   const onSelectActivityRef = useRef(onSelectActivity);
+  const onMoveActivityRef = useRef(onMoveActivity);
   const onSelectStepRef = useRef(onSelectStep);
   const stepsRef = useRef(steps);
 
   pickModeRef.current = pickMode;
   onClickCoordsRef.current = onMapClickCoordinates;
   onSelectActivityRef.current = onSelectActivity;
+  onMoveActivityRef.current = onMoveActivity;
   onSelectStepRef.current = onSelectStep;
   stepsRef.current = steps;
 
@@ -486,19 +492,39 @@ export function JapanMap({
           activeDate >= act.idealStartDate &&
           activeDate <= act.idealEndDate
       );
+      const isSelected = act.id === selectedActivityId;
       const el = createActivityMarkerElement(
         act,
-        act.id === selectedActivityId,
+        isSelected,
         matchesTimeline
       );
+      if (isSelected) {
+        el.title = `${act.name} — glisser pour déplacer`;
+      }
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
         onSelectActivityRef.current(act);
       });
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: 'center',
+        draggable: isSelected,
+      })
         .setLngLat([act.lng, act.lat])
         .addTo(map);
+
+      if (isSelected) {
+        marker.on('dragend', () => {
+          const ll = marker.getLngLat();
+          if (isInsideJapan(ll.lat, ll.lng)) {
+            onMoveActivityRef.current?.(act.id, ll.lat, ll.lng);
+          } else {
+            marker.setLngLat([act.lng, act.lat]);
+          }
+        });
+      }
+
       activityMarkersRef.current.push(marker);
     }
   }, [activities, selectedActivityId, activeDate, mode, mapReady]);
@@ -675,7 +701,7 @@ export function JapanMap({
 
       {pickMode && (
         <div className="pointer-events-none fixed left-1/2 top-24 z-30 -translate-x-1/2 rounded-md bg-[#C83228] px-3.5 py-1.5 text-xs font-medium text-white shadow-md">
-          Cliquez sur la carte du Japon pour placer le point
+          {pickBannerText || 'Cliquez sur la carte du Japon pour placer le point'}
         </div>
       )}
 

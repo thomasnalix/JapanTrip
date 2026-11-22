@@ -10,7 +10,10 @@ import {
   History,
   ImagePlus,
   Link2,
+  MapPin,
+  Move,
   Plus,
+  Search,
   Star,
   Trash2,
   Upload,
@@ -29,12 +32,17 @@ import {
   Category,
   MAX_ACTIVITY_LINKS,
   MAX_ACTIVITY_PHOTOS,
+  SearchPlaceResult,
 } from '@/lib/schemas';
+import { SearchPlaceBar } from './SearchPlaceBar';
 
 interface ActivityDrawerProps {
   activity: Activity;
   isNew: boolean;
   activeAuthor: Author;
+  isRepositioning: boolean;
+  onToggleReposition: () => void;
+  onFocusLocation: (lat: number, lng: number) => void;
   onSave: (updated: Activity, closeAfter?: boolean) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
@@ -44,6 +52,9 @@ export function ActivityDrawer({
   activity,
   isNew,
   activeAuthor,
+  isRepositioning,
+  onToggleReposition,
+  onFocusLocation,
   onSave,
   onDelete,
   onClose,
@@ -58,6 +69,7 @@ export function ActivityDrawer({
   const [linkUrl, setLinkUrl] = useState('');
   const [linkError, setLinkError] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [showLocationSearch, setShowLocationSearch] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +87,7 @@ export function ActivityDrawer({
     setDraft(activity);
     setPhotoIdx(0);
     setShowPhotoInput(false);
+    setShowLocationSearch(false);
     setLinkError('');
     requestAnimationFrame(() => {
       autoResize(descRef.current);
@@ -433,6 +446,59 @@ export function ActivityDrawer({
             placeholder="Adresse ou description détaillée..."
             className="min-h-[96px] w-full resize-none overflow-hidden rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs leading-relaxed text-zinc-700 outline-none focus:border-[#C83228]"
           />
+        </div>
+
+        {/* Location & Relocate */}
+        <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50/70 p-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-600">
+              <MapPin className="h-3.5 w-3.5 text-[#C83228]" />
+              {draft.lat.toFixed(4)}, {draft.lng.toFixed(4)}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onToggleReposition}
+                className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                  isRepositioning
+                    ? 'border-[#C83228] bg-[#C83228] text-white'
+                    : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100'
+                }`}
+                title="Cliquer sur la carte pour déplacer ce point (ou glisser le marqueur)"
+              >
+                <Move className="h-3 w-3" />
+                <span>{isRepositioning ? 'Cliquer sur la carte...' : 'Déplacer'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLocationSearch((s) => !s)}
+                className="flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100"
+              >
+                <Search className="h-3 w-3" />
+                <span>Chercher</span>
+              </button>
+            </div>
+          </div>
+
+          {showLocationSearch && (
+            <SearchPlaceBar
+              compact
+              placeholder="Rechercher la nouvelle adresse..."
+              onSelectPlace={(place: SearchPlaceResult) => {
+                updateField(
+                  {
+                    lat: place.lat,
+                    lng: place.lng,
+                    address: place.address,
+                  },
+                  'Localisation modifiée',
+                  true
+                );
+                onFocusLocation(place.lat, place.lng);
+                setShowLocationSearch(false);
+              }}
+            />
+          )}
         </div>
 
         {/* Category selector */}
