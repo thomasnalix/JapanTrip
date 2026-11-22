@@ -4,15 +4,17 @@ import { fetchJapanClimateSeries } from '@/lib/japan-climate';
 import type { ClimateDaySnapshot } from '@/lib/schemas';
 import { getRedisCache, setRedisCache } from '@/lib/storage';
 
+export const maxDuration = 30;
+
 export async function GET(req: NextRequest) {
   const start = req.nextUrl.searchParams.get('start') ?? '2026-11-01';
   const end = req.nextUrl.searchParams.get('end') ?? '2026-11-22';
 
   const days = getTripDays(start, end);
-  const cacheKey = `japantrip:climate:v5:${days[0]}:${days[days.length - 1]}`;
+  const cacheKey = `japantrip:climate:v6:${days[0]}:${days[days.length - 1]}`;
 
   const cached = await getRedisCache<ClimateDaySnapshot[]>(cacheKey);
-  if (cached) {
+  if (cached && cached[0]?.source !== 'normals') {
     return NextResponse.json(
       { snapshots: cached, cached: true },
       { headers: { 'Cache-Control': 'public, max-age=86400' } }
@@ -20,13 +22,19 @@ export async function GET(req: NextRequest) {
   }
 
   const snapshots = await fetchJapanClimateSeries(days);
-  const isForecast = snapshots[0]?.source === 'forecast';
-  // Cache 10-year historical averages for 30 days in Redis; forecasts for 3 hours
-  const ttlSeconds = isForecast ? 60 * 60 * 3 : 60 * 60 * 24 * 30;
+  const source = snapshots[0]?.source;
 
-  if (snapshots.length > 0 && snapshots[0]?.source !== 'normals') {
-    await setRedisCache(cacheKey, snapshots, ttlSeconds);
+  // Never cache degraded/offline fallback responses on CDN or Redis
+  if (snapshots.length === 0 || source === 'normals') {
+    return NextResponse.json(
+      { snapshots, cached: false },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   }
+
+  const ttlSeconds =
+    source === 'forecast' ? 60 * 60 * 3 : 60 * 60 * 24 * 30;
+  await setRedisCache(cacheKey, snapshots, ttlSeconds);
 
   return NextResponse.json(
     { snapshots, cached: false },

@@ -36,6 +36,7 @@ const AUTHOR_STORAGE_KEY = 'japantrip:active-author';
 
 export default function HomePage() {
   const [tripData, setTripData] = useState<TripData>(createDefaultTripData);
+  const [tripLoaded, setTripLoaded] = useState(false);
   const [matchedEnvKey, setMatchedEnvKey] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -105,6 +106,7 @@ export default function HomePage() {
       setMatchedEnvKey(json.matchedEnvKey ?? null);
       setSyncError(null);
       setTripData(json.data);
+      setTripLoaded(true);
     } catch {
       setSyncError('Erreur réseau');
     } finally {
@@ -127,11 +129,12 @@ export default function HomePage() {
     };
   }, [fetchTripData]);
 
-  // Climate data is cached server-side in Upstash Redis + browser localStorage
+  // Wait until trip dates are loaded from Redis so we don't fire 2 simultaneous Open-Meteo calls
   useEffect(() => {
+    if (!tripLoaded) return;
     const start = tripData.settings.startDate;
     const end = tripData.settings.endDate;
-    const cacheKey = `japantrip:climate:v5:${start}:${end}`;
+    const cacheKey = `japantrip:climate:v6:${start}:${end}`;
 
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {
@@ -178,7 +181,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [tripData.settings.startDate, tripData.settings.endDate]);
+  }, [tripLoaded, tripData.settings.startDate, tripData.settings.endDate]);
 
   async function mutateTrip(mutation: TripMutation) {
     setSyncing(true);

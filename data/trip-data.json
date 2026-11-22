@@ -1,0 +1,133 @@
+{
+  "version": 16,
+  "updatedAt": "2026-11-22T16:50:49.298Z",
+  "settings": {
+    "tripTitle": "Japon — Nell & Thomas",
+    "startDate": "2026-10-17",
+    "endDate": "2026-12-30"
+  },
+  "activities": [
+    {
+      "id": "fed6df5c-fc2d-4005-8390-1b359a6174d6",
+      "name": "Fukiage Hot spring (free)",
+      "description": "Fukiage Hot spring (free), Tokachidake-onsen Biei Line, 吹上, Kamifurano, Sorachi County, Kamikawa Subprefecture, Hokkaido Prefecture, Hokkaido Region, 071-0500, Japan",
+      "address": "Fukiage Hot spring (free), Tokachidake-onsen Biei Line, 吹上, Kamifurano, Sorachi County, Kamikawa Subprefecture, Hokkaido Prefecture, Hokkaido Region, 071-0500, Japan",
+      "lat": 43.4297364,
+      "lng": 142.6372595,
+      "category": "cafe",
+      "rating": 4,
+      "note": "",
+      "links": [],
+      "photos": [],
+      "createdBy": "Thomas",
+      "createdAt": "2026-11-22T16:50:42.447Z",
+      "updatedBy": "Thomas",
+      "updatedAt": "2026-11-22T16:50:42.447Z",
+      "history": [
+        {
+          "author": "Thomas",
+          "action": "created",
+          "at": "2026-11-22T16:50:49.301Z",
+          "summary": "Création"
+        }
+      ]
+    },
+    {
+      "id": "53917b11-58a3-49e2-bbba-a25cbc938da3",
+      "name": "sdfsdf",
+      "description": "",
+      "lat": 34.98038046756972,
+      "lng": 132.49910279709326,
+      "category": "transport",
+      "rating": 1,
+      "note": "sfsdf\nsdf",
+      "links": [],
+      "photos": [],
+      "createdBy": "Thomas",
+      "createdAt": "2026-11-22T16:43:08.768Z",
+      "updatedBy": "Thomas",
+      "updatedAt": "2026-11-22T16:44:20.758Z",
+      "history": [
+        {
+          "author": "Thomas",
+          "action": "created",
+          "at": "2026-11-22T16:44:01.205Z",
+          "summary": "Création"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:12.924Z",
+          "summary": "Catégorie: Café & Bar"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:15.579Z",
+          "summary": "Catégorie: Expérience"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:15.944Z",
+          "summary": "Catégorie: Transport"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:16.886Z",
+          "summary": "Note: 1.5/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:17.481Z",
+          "summary": "Note: 2/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:18.240Z",
+          "summary": "Note: 1/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:18.565Z",
+          "summary": "Note: 2/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:18.863Z",
+          "summary": "Note: 5/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:19.332Z",
+          "summary": "Note: 4/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:19.622Z",
+          "summary": "Note: 2/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:20.368Z",
+          "summary": "Note: 0/5"
+        },
+        {
+          "author": "Thomas",
+          "action": "updated",
+          "at": "2026-11-22T16:44:20.758Z",
+          "summary": "Note: 1/5"
+        }
+      ]
+    }
+  ],
+  "tripSteps": []
+}

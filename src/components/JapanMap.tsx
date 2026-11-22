@@ -287,9 +287,9 @@ export function JapanMap({
   stepsRef.current = steps;
 
   useEffect(() => {
-    fetch('/data/japan-prefectures.json')
-      .then((r) => r.json())
-      .then((geo: PrefectureCollection) => {
+    import('@/lib/japan-prefectures.json')
+      .then((mod) => {
+        const geo = mod.default as PrefectureCollection;
         const enriched: PrefectureCollection = {
           type: 'FeatureCollection',
           features: geo.features.map((f) => {
