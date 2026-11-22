@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { MapPinPlus, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
+import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal';
 import {
   AppMode,
   JapanMap,
@@ -45,6 +46,7 @@ export default function HomePage() {
 
   const [mode, setMode] = useState<AppMode>('activities');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [pickOnMap, setPickOnMap] = useState(false);
   const [repositioningActivity, setRepositioningActivity] = useState(false);
 
@@ -60,6 +62,11 @@ export default function HomePage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<MapFocusTarget | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    kind: 'activity' | 'step';
+    id: string;
+    label: string;
+  } | null>(null);
 
   const tripDays = useMemo(
     () =>
@@ -369,12 +376,32 @@ export default function HomePage() {
   }
 
   function handleDeleteActivity(id: string) {
-    setTripData((prev) => ({
-      ...prev,
-      activities: prev.activities.filter((a) => a.id !== id),
-    }));
-    setActiveActivity(null);
-    void mutateTrip({ action: 'delete_activity', id });
+    const target = tripData.activities.find((a) => a.id === id);
+    setPendingDelete({
+      kind: 'activity',
+      id,
+      label: target?.name || 'cette activité',
+    });
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === 'activity') {
+      setTripData((prev) => ({
+        ...prev,
+        activities: prev.activities.filter((a) => a.id !== pendingDelete.id),
+      }));
+      setActiveActivity(null);
+      void mutateTrip({ action: 'delete_activity', id: pendingDelete.id });
+    } else {
+      setTripData((prev) => ({
+        ...prev,
+        tripSteps: prev.tripSteps.filter((s) => s.id !== pendingDelete.id),
+      }));
+      setActiveStepModal(null);
+      void mutateTrip({ action: 'delete_step', id: pendingDelete.id });
+    }
+    setPendingDelete(null);
   }
 
   function handleSaveStep(step: TripStep) {
@@ -398,12 +425,12 @@ export default function HomePage() {
   }
 
   function handleDeleteStep(id: string) {
-    setTripData((prev) => ({
-      ...prev,
-      tripSteps: prev.tripSteps.filter((s) => s.id !== id),
-    }));
-    setActiveStepModal(null);
-    void mutateTrip({ action: 'delete_step', id });
+    const target = tripData.tripSteps.find((s) => s.id === id);
+    setPendingDelete({
+      kind: 'step',
+      id,
+      label: target?.title || 'cette étape',
+    });
   }
 
   function handleSaveSettings(settings: TripSettings) {
@@ -441,7 +468,7 @@ export default function HomePage() {
       : tripData.settings.tripTitle;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-zinc-50">
+    <main className="relative h-[100dvh] w-screen overflow-hidden bg-zinc-50">
       {/* Fullscreen Map */}
       <JapanMap
         mode={mode}
@@ -477,20 +504,20 @@ export default function HomePage() {
       />
 
       {/* Top Navigation Bar */}
-      <header className="pointer-events-none fixed left-3 right-3 top-3 z-30 flex flex-wrap items-center justify-between gap-2 sm:left-4 sm:right-4">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-zinc-200 bg-white/95 px-3 py-1.5 shadow-sm backdrop-blur-md">
-          <span className="text-sm font-semibold tracking-tight text-zinc-900">
+      <header className="pointer-events-none fixed left-2.5 right-2.5 top-2.5 z-30 flex items-center justify-between gap-1.5 sm:left-4 sm:right-4 sm:top-3">
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white/95 px-2 py-1 shadow-sm backdrop-blur-md sm:gap-2 sm:px-3 sm:py-1.5">
+          <span className="hidden text-sm font-semibold tracking-tight text-zinc-900 sm:inline">
             {displayTitle}
           </span>
 
-          <div className="ml-1 flex rounded-lg bg-zinc-100 p-0.5 text-xs font-medium">
+          <div className="flex rounded-lg bg-zinc-100 p-0.5 text-xs font-medium sm:ml-1">
             <button
               type="button"
               onClick={() => {
                 setMode('activities');
                 setPickOnMap(false);
               }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition sm:px-2.5 ${
                 mode === 'activities'
                   ? 'bg-[#C83228] text-white shadow-xs'
                   : 'text-zinc-600 hover:text-zinc-900'
@@ -506,24 +533,25 @@ export default function HomePage() {
                 setPickOnMap(false);
                 setActiveActivity(null);
               }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition sm:px-2.5 ${
                 mode === 'planning'
                   ? 'bg-[#C83228] text-white shadow-xs'
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
               <FontAwesomeIcon icon={UI_ICONS.compass} className="text-[11px]" />
-              <span>Étapes & Météo</span>
+              <span className="sm:hidden">Étapes</span>
+              <span className="hidden sm:inline">Étapes & Météo</span>
             </button>
           </div>
         </div>
 
         {/* Sync status + Refresh + Author badge + Settings */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
           <button
             type="button"
             onClick={() => void fetchTripData(true)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm backdrop-blur-md transition ${
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium shadow-sm backdrop-blur-md transition sm:px-2.5 ${
               syncError
                 ? 'border-red-200 bg-red-50/95 text-[#C83228]'
                 : 'border-zinc-200 bg-white/95 text-zinc-700 hover:bg-zinc-50'
@@ -551,13 +579,13 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm backdrop-blur-md transition hover:bg-zinc-50"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/95 px-2 text-xs font-medium text-zinc-800 shadow-sm backdrop-blur-md transition hover:bg-zinc-50 sm:px-2.5"
             >
               <FontAwesomeIcon
                 icon={UI_ICONS.user}
                 className="text-[11px] text-[#C83228]"
               />
-              <span>{activeAuthor}</span>
+              <span className="hidden xs:inline sm:inline">{activeAuthor}</span>
             </button>
           )}
           <button
@@ -573,15 +601,18 @@ export default function HomePage() {
 
       {/* Activities Mode Overlay */}
       {mode === 'activities' && (
-        <div className="pointer-events-none fixed left-3 right-3 top-[60px] z-20 flex flex-col gap-2 sm:left-4 sm:right-4">
-          <div className="pointer-events-auto flex w-full max-w-md items-center gap-2">
-            <div className="flex-1">
-              <SearchPlaceBar onSelectPlace={handleSelectPlaceForActivity} />
+        <div className="pointer-events-none fixed left-2.5 right-2.5 top-[54px] z-20 flex flex-col gap-1.5 sm:left-4 sm:right-4 sm:top-[60px] sm:gap-2">
+          <div className="pointer-events-auto flex w-full max-w-md items-center gap-1.5 sm:gap-2">
+            <div className="min-w-0 flex-1">
+              <SearchPlaceBar
+                placeholder="Rechercher un lieu..."
+                onSelectPlace={handleSelectPlaceForActivity}
+              />
             </div>
             <button
               type="button"
               onClick={() => setPickOnMap((p) => !p)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm backdrop-blur-md transition ${
+              className={`flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium shadow-sm backdrop-blur-md transition sm:px-3 ${
                 pickOnMap
                   ? 'border-[#C83228] bg-[#C83228] text-white'
                   : 'border-zinc-200 bg-white/95 text-zinc-800 hover:bg-zinc-50'
@@ -593,10 +624,29 @@ export default function HomePage() {
                 {pickOnMap ? 'Annuler' : 'Pointer'}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((v) => !v)}
+              className={`flex h-9 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium shadow-sm backdrop-blur-md transition sm:hidden ${
+                mobileFiltersOpen || selectedCategories.length > 0
+                  ? 'border-[#C83228] bg-[#C83228] text-white'
+                  : 'border-zinc-200 bg-white/95 text-zinc-800'
+              }`}
+              title="Filtrer par catégorie"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {selectedCategories.length > 0 && (
+                <span>{selectedCategories.length}</span>
+              )}
+            </button>
           </div>
 
-          {/* Full-width wrapping Category Filter Bar */}
-          <div className="pointer-events-auto flex w-full flex-wrap items-center gap-1.5">
+          {/* Full-width wrapping Category Filter Bar (always visible on sm+, toggleable on mobile) */}
+          <div
+            className={`pointer-events-auto w-full flex-wrap items-center gap-1.5 ${
+              mobileFiltersOpen ? 'flex' : 'hidden sm:flex'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setSelectedCategories([])}
@@ -746,6 +796,18 @@ export default function HomePage() {
         onSaveSettings={handleSaveSettings}
         onImportTripData={handleImportTripData}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      <ConfirmDeleteModal
+        open={pendingDelete !== null}
+        title={
+          pendingDelete?.kind === 'activity'
+            ? 'Supprimer cette activité ?'
+            : 'Supprimer cette étape ?'
+        }
+        description={`« ${pendingDelete?.label ?? ''} » sera définitivement supprimé pour Nell et Thomas.`}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
       />
     </main>
   );

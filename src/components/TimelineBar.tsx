@@ -36,14 +36,14 @@ export function TimelineBar({
   const stepDates = new Set(steps.map((s) => s.date));
 
   return (
-    <div className="pointer-events-auto mx-auto flex w-full max-w-2xl flex-col gap-1.5 rounded-xl border border-zinc-200 bg-white/95 px-3.5 py-2.5 shadow-md backdrop-blur-md">
+    <div className="pointer-events-auto mx-auto flex w-full max-w-2xl flex-col gap-1 rounded-xl border border-zinc-200 bg-white/95 px-3 py-2 shadow-md backdrop-blur-md sm:gap-1.5 sm:px-3.5 sm:py-2.5">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2 font-medium text-zinc-900">
-          <Calendar className="h-3.5 w-3.5 text-[#C83228]" />
-          <span>
-            Jour {safeIdx + 1} / {days.length}
+        <div className="flex min-w-0 items-center gap-1.5 font-medium text-zinc-900 sm:gap-2">
+          <Calendar className="h-3.5 w-3.5 shrink-0 text-[#C83228]" />
+          <span className="shrink-0">
+            J{safeIdx + 1}/{days.length}
           </span>
-          <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium capitalize text-zinc-600">
+          <span className="truncate rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium capitalize text-zinc-600">
             {formatFrenchDate(currentDay, true)}
           </span>
         </div>
@@ -100,7 +100,7 @@ export function TimelineBar({
             setPlaying(false);
             onChangeIndex(Number(e.target.value));
           }}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-200 accent-[#C83228]"
+          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-zinc-200 accent-[#C83228] sm:h-1.5"
           aria-label="Curseur temporel du voyage"
         />
       </div>

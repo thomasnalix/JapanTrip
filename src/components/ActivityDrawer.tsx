@@ -239,8 +239,9 @@ export function ActivityDrawer({
   return (
     <aside
       onPaste={handlePaste}
-      className="pointer-events-auto fixed bottom-0 right-0 top-auto z-40 flex max-h-[82vh] w-full flex-col overflow-hidden rounded-t-xl border border-zinc-200 bg-white shadow-xl md:bottom-4 md:right-4 md:top-24 md:max-h-none md:w-[400px] md:rounded-xl"
+      className="pointer-events-auto fixed bottom-0 right-0 top-auto z-40 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl md:bottom-4 md:right-4 md:top-24 md:max-h-none md:w-[400px] md:rounded-xl md:pb-0"
     >
+      <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 md:hidden" />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
         <div className="flex items-center gap-2">

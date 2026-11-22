@@ -447,6 +447,19 @@ export function JapanMap({
             });
           }
         });
+        map.on('click', ZONING_FILL_LAYER_ID, (e) => {
+          if (pickModeRef.current) return;
+          const props = e.features?.[0]?.properties as
+            | { name?: string; valueLabel?: string; details?: string }
+            | undefined;
+          if (props?.name && props.valueLabel) {
+            setHoveredZone({
+              name: props.name,
+              valueLabel: props.valueLabel,
+              details: props.details ?? '',
+            });
+          }
+        });
         map.on('mouseleave', ZONING_FILL_LAYER_ID, () => {
           setHoveredZone(null);
         });
@@ -717,12 +730,22 @@ export function JapanMap({
       )}
 
       {mode === 'planning' && hoveredZone && (
-        <div className="pointer-events-none fixed right-3 top-[64px] z-20 rounded-lg border border-zinc-200 bg-white/95 px-3 py-2 shadow-md backdrop-blur-md sm:right-4">
-          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-zinc-900">
-            <span>{hoveredZone.name}</span>
-            <span className="rounded-md bg-[#C83228]/10 px-1.5 py-0.5 text-[#C83228]">
-              {hoveredZone.valueLabel}
-            </span>
+        <div className="pointer-events-auto fixed bottom-24 left-2.5 right-14 z-20 rounded-lg border border-zinc-200 bg-white/95 px-3 py-2 shadow-md backdrop-blur-md sm:bottom-auto sm:left-auto sm:right-4 sm:top-[64px]">
+          <div className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-900">
+            <span className="truncate">{hoveredZone.name}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="shrink-0 rounded-md bg-[#C83228]/10 px-1.5 py-0.5 text-[#C83228]">
+                {hoveredZone.valueLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHoveredZone(null)}
+                className="text-zinc-400 hover:text-zinc-700 sm:hidden"
+                aria-label="Fermer"
+              >
+                ×
+              </button>
+            </div>
           </div>
           <div className="mt-0.5 text-[11px] text-zinc-500">
             {hoveredZone.details}
@@ -730,7 +753,7 @@ export function JapanMap({
         </div>
       )}
 
-      <div className="fixed bottom-28 right-3 z-20 flex flex-col gap-1.5 sm:right-4">
+      <div className="fixed bottom-24 right-2.5 z-20 flex flex-col gap-1.5 sm:bottom-28 sm:right-4">
         <button
           type="button"
           onClick={() => mapRef.current?.zoomIn({ duration: 220 })}
