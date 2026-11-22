@@ -73,6 +73,7 @@ const ZONING_FILL_LAYER_ID = 'japan-zoning-fill';
 const ZONING_LINE_LAYER_ID = 'japan-zoning-line';
 const ROUTES_SOURCE_ID = 'trip-routes-source';
 const ROUTES_LAYER_ID = 'trip-routes-layer';
+const ROUTES_HIT_LAYER_ID = 'trip-routes-hit-layer';
 
 function computePolygonCentroid(
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
@@ -91,7 +92,50 @@ function computePolygonCentroid(
   return [sumLng / ring.length, sumLat / ring.length];
 }
 
-/** Build an SVG circular rating gauge marker with a crisp Font Awesome vector icon. */
+/**
+ * Build a smooth quadratic Bezier arc for flights and return all coordinates + exact midpoint.
+ */
+function buildRouteGeometry(
+  from: [number, number],
+  to: [number, number],
+  curved: boolean
+): { coordinates: [number, number][]; midpoint: [number, number] } {
+  if (!curved) {
+    return {
+      coordinates: [from, to],
+      midpoint: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2],
+    };
+  }
+
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const dist = Math.hypot(dx, dy) || 1;
+  // Perpendicular normal rotated consistently upward/westward for nice flight arcs
+  let nx = -dy / dist;
+  let ny = dx / dist;
+  if (ny < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const offset = Math.min(2.6, Math.max(0.35, dist * 0.22));
+  const ctrl: [number, number] = [
+    (from[0] + to[0]) / 2 + nx * offset,
+    (from[1] + to[1]) / 2 + ny * offset,
+  ];
+
+  const segments = 32;
+  const coordinates: [number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const inv = 1 - t;
+    const lng = inv * inv * from[0] + 2 * inv * t * ctrl[0] + t * t * to[0];
+    const lat = inv * inv * from[1] + 2 * inv * t * ctrl[1] + t * t * to[1];
+    coordinates.push([lng, lat]);
+  }
+  const midpoint = coordinates[Math.floor(segments / 2)];
+  return { coordinates, midpoint };
+}
+
 function createActivityMarkerElement(
   activity: Activity,
   isSelected: boolean,
@@ -120,12 +164,7 @@ function createActivityMarkerElement(
   btn.innerHTML = `
     <svg width="40" height="40" viewBox="0 0 40 40" style="filter: drop-shadow(0 2px 5px rgba(9,9,11,0.22));">
       <circle cx="20" cy="20" r="18" fill="#FFFFFF" />
-      <circle
-        cx="20" cy="20" r="${radius}"
-        fill="none"
-        stroke="${trackColor}"
-        stroke-width="3.4"
-      />
+      <circle cx="20" cy="20" r="${radius}" fill="none" stroke="${trackColor}" stroke-width="3.4" />
       <circle
         cx="20" cy="20" r="${radius}"
         fill="none"
@@ -154,7 +193,7 @@ function createActivityMarkerElement(
   return btn;
 }
 
-function createStepMarkerElement(
+function createStepLabelElement(
   step: TripStep,
   isToday: boolean
 ): HTMLButtonElement {
@@ -162,24 +201,41 @@ function createStepMarkerElement(
   const fa = getFaSvgParts(STEP_ICONS[step.type]);
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.title = `${step.title} (${step.date})`;
+  btn.title = `Cliquer pour modifier : ${step.title} (${step.date})`;
   btn.style.cursor = 'pointer';
   btn.className =
     'flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-white shadow-md transition hover:scale-105';
   btn.style.backgroundColor = meta.color;
   btn.style.border = isToday
     ? '2px solid #FFFFFF'
-    : '1px solid rgba(255,255,255,0.75)';
+    : '1px solid rgba(255,255,255,0.85)';
   btn.style.boxShadow = isToday
     ? '0 0 0 2px #C83228, 0 4px 10px rgba(0,0,0,0.25)'
-    : '0 2px 6px rgba(0,0,0,0.2)';
+    : '0 2px 6px rgba(0,0,0,0.22)';
   btn.innerHTML = `
     <svg width="11" height="11" viewBox="0 0 ${fa.width} ${fa.height}" style="flex-shrink:0;">
       <path d="${fa.path}" fill="#FFFFFF" />
     </svg>
-    <span style="max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${step.fromName}</span>
+    <span style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${step.title}</span>
   `;
   return btn;
+}
+
+function createEndpointDotElement(
+  color: string,
+  title: string
+): HTMLButtonElement {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.title = title;
+  dot.style.width = '10px';
+  dot.style.height = '10px';
+  dot.style.borderRadius = '9999px';
+  dot.style.backgroundColor = color;
+  dot.style.border = '2px solid #FFFFFF';
+  dot.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)';
+  dot.style.cursor = 'pointer';
+  return dot;
 }
 
 export function JapanMap({
@@ -214,10 +270,16 @@ export function JapanMap({
 
   const pickModeRef = useRef(pickMode);
   const onClickCoordsRef = useRef(onMapClickCoordinates);
+  const onSelectActivityRef = useRef(onSelectActivity);
+  const onSelectStepRef = useRef(onSelectStep);
+  const stepsRef = useRef(steps);
+
   pickModeRef.current = pickMode;
   onClickCoordsRef.current = onMapClickCoordinates;
+  onSelectActivityRef.current = onSelectActivity;
+  onSelectStepRef.current = onSelectStep;
+  stepsRef.current = steps;
 
-  // Load 47-prefecture simplified GeoJSON once for clean regional zoning
   useEffect(() => {
     fetch('/data/japan-prefectures.json')
       .then((r) => r.json())
@@ -241,7 +303,6 @@ export function JapanMap({
       .catch(() => {});
   }, []);
 
-  // Initialize MapLibre once
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
@@ -271,7 +332,7 @@ export function JapanMap({
           duration: 0,
         });
 
-        // 47-Prefecture regional zoning choropleth source & layers
+        // 47-Prefecture regional zoning choropleth
         map.addSource(ZONING_SOURCE_ID, {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
@@ -296,7 +357,7 @@ export function JapanMap({
           },
         });
 
-        // Trip planning routes source/layer
+        // Trip planning routes (curved for flights, straight for ground/ferry)
         map.addSource(ROUTES_SOURCE_ID, {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
@@ -311,10 +372,50 @@ export function JapanMap({
           },
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': ['case', ['get', 'isToday'], 4, 2.5],
-            'line-opacity': ['case', ['get', 'reached'], 0.92, 0.35],
-            'line-dasharray': [2, 1.4],
+            'line-width': ['case', ['get', 'isToday'], 4, 2.6],
+            'line-opacity': ['case', ['get', 'reached'], 0.95, 0.45],
+            'line-dasharray': [
+              'case',
+              ['get', 'dashed'],
+              ['literal', [2.2, 1.5]],
+              ['literal', [1, 0]],
+            ],
           },
+        });
+
+        // Wide transparent hit layer so clicking curved/straight lines is effortless
+        map.addLayer({
+          id: ROUTES_HIT_LAYER_ID,
+          type: 'line',
+          source: ROUTES_SOURCE_ID,
+          paint: {
+            'line-color': '#000000',
+            'line-width': 18,
+            'line-opacity': 0.01,
+          },
+        });
+
+        map.on('click', ROUTES_HIT_LAYER_ID, (e) => {
+          if (pickModeRef.current) return;
+          const stepId = e.features?.[0]?.properties?.stepId as
+            | string
+            | undefined;
+          if (!stepId) return;
+          const found = stepsRef.current.find((s) => s.id === stepId);
+          if (found) onSelectStepRef.current(found);
+        });
+
+        map.on('mouseenter', ROUTES_HIT_LAYER_ID, () => {
+          if (!pickModeRef.current && map) {
+            map.getCanvas().style.cursor = 'pointer';
+          }
+        });
+        map.on('mouseleave', ROUTES_HIT_LAYER_ID, () => {
+          if (map) {
+            map.getCanvas().style.cursor = pickModeRef.current
+              ? 'crosshair'
+              : '';
+          }
         });
 
         map.on('mousemove', ZONING_FILL_LAYER_ID, (e) => {
@@ -354,14 +455,12 @@ export function JapanMap({
     };
   }, []);
 
-  // Cursor feedback when picking on map
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     map.getCanvas().style.cursor = pickMode ? 'crosshair' : '';
   }, [pickMode, mapReady]);
 
-  // Smooth flyTo when selecting a search result or trip step
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !focusTarget) return;
@@ -394,7 +493,7 @@ export function JapanMap({
       );
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        onSelectActivity(act);
+        onSelectActivityRef.current(act);
       });
 
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
@@ -402,16 +501,9 @@ export function JapanMap({
         .addTo(map);
       activityMarkersRef.current.push(marker);
     }
-  }, [
-    activities,
-    selectedActivityId,
-    activeDate,
-    mode,
-    mapReady,
-    onSelectActivity,
-  ]);
+  }, [activities, selectedActivityId, activeDate, mode, mapReady]);
 
-  // Sync Trip Planning routes & step markers
+  // Sync Trip Planning routes (curved flights, centered titles, clickable lines & labels)
   useEffect(() => {
     stepMarkersRef.current.forEach((m) => m.remove());
     stepMarkersRef.current = [];
@@ -439,46 +531,93 @@ export function JapanMap({
           activeDate <= (step.endDate ?? step.date));
       const reached = step.date <= activeDate;
 
-      if (
+      const hasDestination =
         meta.hasRoute &&
         step.toLat !== undefined &&
-        step.toLng !== undefined
-      ) {
+        step.toLng !== undefined;
+
+      if (hasDestination) {
+        const isFlight = step.type === 'flight';
+        const { coordinates, midpoint } = buildRouteGeometry(
+          [step.fromLng, step.fromLat],
+          [step.toLng!, step.toLat!],
+          isFlight
+        );
+
         routeFeatures.push({
           type: 'Feature',
           properties: {
+            stepId: step.id,
             color: meta.color,
             isToday,
             reached,
+            dashed: isFlight || step.type === 'ferry',
           },
           geometry: {
             type: 'LineString',
-            coordinates: [
-              [step.fromLng, step.fromLat],
-              [step.toLng, step.toLat],
-            ],
+            coordinates,
           },
         });
-      }
 
-      const el = createStepMarkerElement(step, isToday);
-      el.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        onSelectStep(step);
-      });
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([step.fromLng, step.fromLat])
-        .addTo(map);
-      stepMarkersRef.current.push(marker);
+        // Endpoint dots
+        const fromDot = createEndpointDotElement(meta.color, step.fromName);
+        fromDot.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onSelectStepRef.current(step);
+        });
+        stepMarkersRef.current.push(
+          new maplibregl.Marker({ element: fromDot, anchor: 'center' })
+            .setLngLat([step.fromLng, step.fromLat])
+            .addTo(map)
+        );
+
+        const toDot = createEndpointDotElement(
+          meta.color,
+          step.toName || step.title
+        );
+        toDot.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onSelectStepRef.current(step);
+        });
+        stepMarkersRef.current.push(
+          new maplibregl.Marker({ element: toDot, anchor: 'center' })
+            .setLngLat([step.toLng!, step.toLat!])
+            .addTo(map)
+        );
+
+        // Title pill always centered in the middle of the route
+        const midLabel = createStepLabelElement(step, isToday);
+        midLabel.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onSelectStepRef.current(step);
+        });
+        stepMarkersRef.current.push(
+          new maplibregl.Marker({ element: midLabel, anchor: 'center' })
+            .setLngLat(midpoint)
+            .addTo(map)
+        );
+      } else {
+        // Point step (stay or milestone)
+        const el = createStepLabelElement(step, isToday);
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onSelectStepRef.current(step);
+        });
+        stepMarkersRef.current.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([step.fromLng, step.fromLat])
+            .addTo(map)
+        );
+      }
     }
 
     routeSource?.setData({
       type: 'FeatureCollection',
       features: routeFeatures,
     });
-  }, [steps, activeDate, mode, mapReady, onSelectStep]);
+  }, [steps, activeDate, mode, mapReady]);
 
-  // Sync 47-prefecture regional zoning choropleth layer
+  // Sync 47-prefecture regional zoning choropleth
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -534,14 +673,12 @@ export function JapanMap({
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Pick-on-map helper banner */}
       {pickMode && (
         <div className="pointer-events-none fixed left-1/2 top-24 z-30 -translate-x-1/2 rounded-md bg-[#C83228] px-3.5 py-1.5 text-xs font-medium text-white shadow-md">
           Cliquez sur la carte du Japon pour placer le point
         </div>
       )}
 
-      {/* Prefecture zoning hover tooltip */}
       {mode === 'planning' && hoveredZone && (
         <div className="pointer-events-none fixed right-3 top-[64px] z-20 rounded-lg border border-zinc-200 bg-white/95 px-3 py-2 shadow-md backdrop-blur-md sm:right-4">
           <div className="flex items-center justify-between gap-3 text-xs font-semibold text-zinc-900">
@@ -556,7 +693,6 @@ export function JapanMap({
         </div>
       )}
 
-      {/* Zoom + Recenter Japan controls */}
       <div className="fixed bottom-28 right-3 z-20 flex flex-col gap-1.5 sm:right-4">
         <button
           type="button"

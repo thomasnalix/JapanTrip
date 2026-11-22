@@ -62,12 +62,24 @@ export function ActivityDrawer({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  function autoResize(el: HTMLTextAreaElement | null) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }
 
   useEffect(() => {
     setDraft(activity);
     setPhotoIdx(0);
     setShowPhotoInput(false);
     setLinkError('');
+    requestAnimationFrame(() => {
+      autoResize(descRef.current);
+      autoResize(noteRef.current);
+    });
   }, [activity]);
 
   useEffect(() => {
@@ -165,21 +177,36 @@ export function ActivityDrawer({
     setShowPhotoInput(false);
   }
 
-  async function handleFileUpload(files: FileList | null) {
+  async function handleFileUpload(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setUploadingPhoto(true);
     try {
       const remaining = MAX_ACTIVITY_PHOTOS - draft.photos.length;
       const toProcess = Array.from(files).slice(0, remaining);
+      if (toProcess.length === 0) return;
       const compressed = await Promise.all(
         toProcess.map((f) => compressImageFile(f))
       );
       const nextPhotos = [...draft.photos, ...compressed];
-      updateField({ photos: nextPhotos }, 'Photo importée', true);
+      updateField({ photos: nextPhotos }, 'Photo ajoutée', true);
       setPhotoIdx(nextPhotos.length - 1);
       setShowPhotoInput(false);
     } finally {
       setUploadingPhoto(false);
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    if (draft.photos.length >= MAX_ACTIVITY_PHOTOS) return;
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageFiles = items
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null);
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      void handleFileUpload(imageFiles);
     }
   }
 
@@ -197,7 +224,10 @@ export function ActivityDrawer({
   );
 
   return (
-    <aside className="pointer-events-auto fixed bottom-0 right-0 top-auto z-40 flex max-h-[82vh] w-full flex-col overflow-hidden rounded-t-xl border border-zinc-200 bg-white shadow-xl md:bottom-4 md:right-4 md:top-24 md:max-h-none md:w-[400px] md:rounded-xl">
+    <aside
+      onPaste={handlePaste}
+      className="pointer-events-auto fixed bottom-0 right-0 top-auto z-40 flex max-h-[82vh] w-full flex-col overflow-hidden rounded-t-xl border border-zinc-200 bg-white shadow-xl md:bottom-4 md:right-4 md:top-24 md:max-h-none md:w-[400px] md:rounded-xl"
+    >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -303,7 +333,7 @@ export function ActivityDrawer({
           ) : (
             <div className="flex h-20 flex-col items-center justify-center gap-1 text-xs text-zinc-400">
               <ImagePlus className="h-4 w-4" />
-              <span>Aucune photo</span>
+              <span>Ctrl+V pour coller une image, ou importer</span>
             </div>
           )}
 
@@ -312,7 +342,7 @@ export function ActivityDrawer({
             {!showPhotoInput ? (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-zinc-500">
-                  {draft.photos.length} / {MAX_ACTIVITY_PHOTOS} photos
+                  {draft.photos.length}/{MAX_ACTIVITY_PHOTOS} • Ctrl+V pour coller
                 </span>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -390,16 +420,18 @@ export function ActivityDrawer({
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 outline-none focus:border-[#C83228]"
           />
           <textarea
-            rows={2}
+            ref={descRef}
+            rows={4}
             value={draft.description}
-            onChange={(e) =>
+            onChange={(e) => {
+              autoResize(e.currentTarget);
               updateField(
                 { description: e.target.value },
                 'Description modifiée'
-              )
-            }
-            placeholder="Adresse ou courte description..."
-            className="w-full resize-none rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600 outline-none focus:border-[#C83228]"
+              );
+            }}
+            placeholder="Adresse ou description détaillée..."
+            className="min-h-[96px] w-full resize-none overflow-hidden rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs leading-relaxed text-zinc-700 outline-none focus:border-[#C83228]"
           />
         </div>
 
@@ -476,13 +508,15 @@ export function ActivityDrawer({
             Notes personnelles
           </label>
           <textarea
-            rows={3}
+            ref={noteRef}
+            rows={4}
             value={draft.note}
-            onChange={(e) =>
-              updateField({ note: e.target.value }, 'Note modifiée')
-            }
+            onChange={(e) => {
+              autoResize(e.currentTarget);
+              updateField({ note: e.target.value }, 'Note modifiée');
+            }}
             placeholder="Horaires, conseils, plat à goûter..."
-            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 outline-none focus:border-[#C83228]"
+            className="min-h-[96px] w-full resize-none overflow-hidden rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs leading-relaxed text-zinc-900 outline-none focus:border-[#C83228]"
           />
         </div>
 

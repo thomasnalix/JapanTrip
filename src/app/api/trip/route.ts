@@ -16,11 +16,9 @@ export async function GET() {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (err) {
-    console.error('GET /api/trip failed:', err);
-    return NextResponse.json(
-      { error: 'Impossible de charger les données du voyage.' },
-      { status: 500 }
-    );
+    const message =
+      err instanceof Error ? err.message : 'Erreur Upstash Redis.';
+    return NextResponse.json({ error: message }, { status: 503 });
   }
 }
 
@@ -37,11 +35,9 @@ export async function PATCH(req: NextRequest) {
     const result = await applyTripMutation(parsed.data);
     return NextResponse.json(result);
   } catch (err) {
-    console.error('PATCH /api/trip failed:', err);
-    return NextResponse.json(
-      { error: 'Impossible de sauvegarder la modification.' },
-      { status: 500 }
-    );
+    const message =
+      err instanceof Error ? err.message : 'Erreur de sauvegarde Redis.';
+    return NextResponse.json({ error: message }, { status: 503 });
   }
 }
 
@@ -55,13 +51,11 @@ export async function PUT(req: NextRequest) {
         { status: 400 }
       );
     }
-    const storageMode = await writeTripData(parsed.data);
-    return NextResponse.json({ data: parsed.data, storageMode });
+    const status = await writeTripData(parsed.data);
+    return NextResponse.json({ data: parsed.data, ...status });
   } catch (err) {
-    console.error('PUT /api/trip failed:', err);
-    return NextResponse.json(
-      { error: 'Impossible de remplacer les données.' },
-      { status: 500 }
-    );
+    const message =
+      err instanceof Error ? err.message : 'Erreur de sauvegarde Redis.';
+    return NextResponse.json({ error: message }, { status: 503 });
   }
 }

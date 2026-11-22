@@ -11,42 +11,40 @@ export interface JapanStation {
   region: string;
   lat: number;
   lng: number;
-  /** Typical Momiji peak day-of-year (1..365). null for subtropical islands with minimal autumn foliage. */
+  /** Typical Momiji peak day-of-year (1..365) from JMA/Weathernews averages. null for subtropical Okinawa. */
   momijiPeakDoy: number | null;
-  /** Approximate November baseline temperature (°C) used only if Open-Meteo is offline. */
-  baselineNovTempC: number;
 }
 
-// 28 stations spanning Okinawa -> Kyushu -> Shikoku -> Honshu -> Hokkaido
+// 28 meteorological stations spanning Okinawa -> Kyushu -> Shikoku -> Honshu -> Hokkaido
 export const JAPAN_STATIONS: JapanStation[] = [
-  { id: 'ishigaki', name: 'Ishigaki', region: 'Okinawa', lat: 24.34, lng: 124.16, momijiPeakDoy: null, baselineNovTempC: 23.0 },
-  { id: 'naha', name: 'Naha', region: 'Okinawa', lat: 26.21, lng: 127.68, momijiPeakDoy: null, baselineNovTempC: 21.8 },
-  { id: 'kagoshima', name: 'Kagoshima', region: 'Kyushu', lat: 31.59, lng: 130.56, momijiPeakDoy: 334, baselineNovTempC: 15.2 },
-  { id: 'kumamoto', name: 'Kumamoto', region: 'Kyushu', lat: 32.80, lng: 130.71, momijiPeakDoy: 328, baselineNovTempC: 13.6 },
-  { id: 'nagasaki', name: 'Nagasaki', region: 'Kyushu', lat: 32.75, lng: 129.88, momijiPeakDoy: 330, baselineNovTempC: 14.3 },
-  { id: 'fukuoka', name: 'Fukuoka', region: 'Kyushu', lat: 33.59, lng: 130.40, momijiPeakDoy: 327, baselineNovTempC: 13.8 },
-  { id: 'hiroshima', name: 'Hiroshima', region: 'Chugoku', lat: 34.39, lng: 132.46, momijiPeakDoy: 322, baselineNovTempC: 12.8 },
-  { id: 'matsuyama', name: 'Matsuyama', region: 'Shikoku', lat: 33.84, lng: 132.77, momijiPeakDoy: 325, baselineNovTempC: 13.4 },
-  { id: 'takamatsu', name: 'Takamatsu', region: 'Shikoku', lat: 34.34, lng: 134.05, momijiPeakDoy: 324, baselineNovTempC: 12.9 },
-  { id: 'osaka', name: 'Osaka', region: 'Kansai', lat: 34.69, lng: 135.50, momijiPeakDoy: 330, baselineNovTempC: 13.3 },
-  { id: 'kyoto', name: 'Kyoto', region: 'Kansai', lat: 35.01, lng: 135.77, momijiPeakDoy: 327, baselineNovTempC: 12.1 },
-  { id: 'nara', name: 'Nara', region: 'Kansai', lat: 34.68, lng: 135.80, momijiPeakDoy: 326, baselineNovTempC: 11.9 },
-  { id: 'nagoya', name: 'Nagoya', region: 'Chubu', lat: 35.18, lng: 136.91, momijiPeakDoy: 328, baselineNovTempC: 12.6 },
-  { id: 'shizuoka', name: 'Shizuoka', region: 'Chubu', lat: 34.98, lng: 138.38, momijiPeakDoy: 332, baselineNovTempC: 14.0 },
-  { id: 'fuji', name: 'Kawaguchiko', region: 'Mont Fuji', lat: 35.50, lng: 138.76, momijiPeakDoy: 313, baselineNovTempC: 7.4 },
-  { id: 'tokyo', name: 'Tokyo', region: 'Kanto', lat: 35.68, lng: 139.77, momijiPeakDoy: 332, baselineNovTempC: 12.9 },
-  { id: 'nikko', name: 'Nikko', region: 'Kanto Nord', lat: 36.75, lng: 139.60, momijiPeakDoy: 304, baselineNovTempC: 6.2 },
-  { id: 'nagano', name: 'Nagano', region: 'Alpes', lat: 36.65, lng: 138.19, momijiPeakDoy: 309, baselineNovTempC: 7.1 },
-  { id: 'takayama', name: 'Takayama', region: 'Alpes', lat: 36.14, lng: 137.25, momijiPeakDoy: 308, baselineNovTempC: 6.8 },
-  { id: 'kanazawa', name: 'Kanazawa', region: 'Hokuriku', lat: 36.56, lng: 136.66, momijiPeakDoy: 321, baselineNovTempC: 11.2 },
-  { id: 'niigata', name: 'Niigata', region: 'Hokuriku', lat: 37.92, lng: 139.04, momijiPeakDoy: 317, baselineNovTempC: 10.1 },
-  { id: 'sendai', name: 'Sendai', region: 'Tohoku', lat: 38.27, lng: 140.87, momijiPeakDoy: 315, baselineNovTempC: 9.2 },
-  { id: 'morioka', name: 'Morioka', region: 'Tohoku', lat: 39.70, lng: 141.15, momijiPeakDoy: 305, baselineNovTempC: 6.1 },
-  { id: 'aomori', name: 'Aomori', region: 'Tohoku', lat: 40.82, lng: 140.75, momijiPeakDoy: 307, baselineNovTempC: 6.4 },
-  { id: 'hakodate', name: 'Hakodate', region: 'Hokkaido', lat: 41.77, lng: 140.73, momijiPeakDoy: 304, baselineNovTempC: 5.5 },
-  { id: 'sapporo', name: 'Sapporo', region: 'Hokkaido', lat: 43.06, lng: 141.35, momijiPeakDoy: 300, baselineNovTempC: 4.3 },
-  { id: 'asahikawa', name: 'Asahikawa', region: 'Hokkaido', lat: 43.77, lng: 142.36, momijiPeakDoy: 292, baselineNovTempC: 2.3 },
-  { id: 'wakkanai', name: 'Wakkanai', region: 'Hokkaido', lat: 45.41, lng: 141.67, momijiPeakDoy: 290, baselineNovTempC: 3.1 },
+  { id: 'ishigaki', name: 'Ishigaki', region: 'Okinawa', lat: 24.34, lng: 124.16, momijiPeakDoy: null },
+  { id: 'naha', name: 'Naha', region: 'Okinawa', lat: 26.21, lng: 127.68, momijiPeakDoy: null },
+  { id: 'kagoshima', name: 'Kagoshima', region: 'Kyushu', lat: 31.59, lng: 130.56, momijiPeakDoy: 334 },
+  { id: 'kumamoto', name: 'Kumamoto', region: 'Kyushu', lat: 32.80, lng: 130.71, momijiPeakDoy: 328 },
+  { id: 'nagasaki', name: 'Nagasaki', region: 'Kyushu', lat: 32.75, lng: 129.88, momijiPeakDoy: 330 },
+  { id: 'fukuoka', name: 'Fukuoka', region: 'Kyushu', lat: 33.59, lng: 130.40, momijiPeakDoy: 327 },
+  { id: 'hiroshima', name: 'Hiroshima', region: 'Chugoku', lat: 34.39, lng: 132.46, momijiPeakDoy: 322 },
+  { id: 'matsuyama', name: 'Matsuyama', region: 'Shikoku', lat: 33.84, lng: 132.77, momijiPeakDoy: 325 },
+  { id: 'takamatsu', name: 'Takamatsu', region: 'Shikoku', lat: 34.34, lng: 134.05, momijiPeakDoy: 324 },
+  { id: 'osaka', name: 'Osaka', region: 'Kansai', lat: 34.69, lng: 135.50, momijiPeakDoy: 330 },
+  { id: 'kyoto', name: 'Kyoto', region: 'Kansai', lat: 35.01, lng: 135.77, momijiPeakDoy: 327 },
+  { id: 'nara', name: 'Nara', region: 'Kansai', lat: 34.68, lng: 135.80, momijiPeakDoy: 326 },
+  { id: 'nagoya', name: 'Nagoya', region: 'Chubu', lat: 35.18, lng: 136.91, momijiPeakDoy: 328 },
+  { id: 'shizuoka', name: 'Shizuoka', region: 'Chubu', lat: 34.98, lng: 138.38, momijiPeakDoy: 332 },
+  { id: 'fuji', name: 'Kawaguchiko', region: 'Mont Fuji', lat: 35.50, lng: 138.76, momijiPeakDoy: 313 },
+  { id: 'tokyo', name: 'Tokyo', region: 'Kanto', lat: 35.68, lng: 139.77, momijiPeakDoy: 332 },
+  { id: 'nikko', name: 'Nikko', region: 'Kanto Nord', lat: 36.75, lng: 139.60, momijiPeakDoy: 304 },
+  { id: 'nagano', name: 'Nagano', region: 'Alpes', lat: 36.65, lng: 138.19, momijiPeakDoy: 309 },
+  { id: 'takayama', name: 'Takayama', region: 'Alpes', lat: 36.14, lng: 137.25, momijiPeakDoy: 308 },
+  { id: 'kanazawa', name: 'Kanazawa', region: 'Hokuriku', lat: 36.56, lng: 136.66, momijiPeakDoy: 321 },
+  { id: 'niigata', name: 'Niigata', region: 'Hokuriku', lat: 37.92, lng: 139.04, momijiPeakDoy: 317 },
+  { id: 'sendai', name: 'Sendai', region: 'Tohoku', lat: 38.27, lng: 140.87, momijiPeakDoy: 315 },
+  { id: 'morioka', name: 'Morioka', region: 'Tohoku', lat: 39.70, lng: 141.15, momijiPeakDoy: 305 },
+  { id: 'aomori', name: 'Aomori', region: 'Tohoku', lat: 40.82, lng: 140.75, momijiPeakDoy: 307 },
+  { id: 'hakodate', name: 'Hakodate', region: 'Hokkaido', lat: 41.77, lng: 140.73, momijiPeakDoy: 304 },
+  { id: 'sapporo', name: 'Sapporo', region: 'Hokkaido', lat: 43.06, lng: 141.35, momijiPeakDoy: 300 },
+  { id: 'asahikawa', name: 'Asahikawa', region: 'Hokkaido', lat: 43.77, lng: 142.36, momijiPeakDoy: 292 },
+  { id: 'wakkanai', name: 'Wakkanai', region: 'Hokkaido', lat: 45.41, lng: 141.67, momijiPeakDoy: 290 },
 ];
 
 export interface LayerMeta {
@@ -282,41 +280,29 @@ function shiftDateToYear(dateStr: string, targetYear: number): string {
   return `${targetYear}-${m}-${safeDay}`;
 }
 
-function buildFallbackSnapshots(dates: string[]): ClimateDaySnapshot[] {
-  return dates.map((date) => {
-    const doy = dayOfYear(date);
-    // Simple seasonal cosine offset relative to November (~doy 315)
-    const seasonalOffset = Math.cos(((doy - 210) / 365) * 2 * Math.PI) * -9.5;
-    const novOffset = Math.cos(((315 - 210) / 365) * 2 * Math.PI) * -9.5;
-    const delta = seasonalOffset - novOffset;
-
-    const stations: ClimateStationValue[] = JAPAN_STATIONS.map((st) => {
-      const tempMean = Math.round((st.baselineNovTempC + delta) * 10) / 10;
+function buildMomijiOnlySnapshots(dates: string[]): ClimateDaySnapshot[] {
+  return dates.map((date) => ({
+    date,
+    source: 'normals',
+    referenceYear: new Date().getUTCFullYear(),
+    stations: JAPAN_STATIONS.map((st) => {
       const momiji = computeMomijiForDate(st, date);
-      const isCold = tempMean < 2.5;
       return {
         id: st.id,
         name: st.name,
         region: st.region,
         lat: st.lat,
         lng: st.lng,
-        tempMeanC: tempMean,
-        tempMinC: Math.round((tempMean - 4) * 10) / 10,
-        tempMaxC: Math.round((tempMean + 4.5) * 10) / 10,
-        precipitationMm: 2.0,
-        snowfallCm: isCold && st.lat > 36 ? 3.5 : 0,
+        tempMeanC: 0,
+        tempMinC: 0,
+        tempMaxC: 0,
+        precipitationMm: 0,
+        snowfallCm: 0,
         momijiScore: momiji.score,
         momijiPhase: momiji.phase,
       };
-    });
-
-    return {
-      date,
-      source: 'normals',
-      referenceYear: new Date().getUTCFullYear(),
-      stations,
-    };
-  });
+    }),
+  }));
 }
 
 /**
@@ -330,7 +316,7 @@ export async function fetchJapanClimateSeries(
 
   const firstDate = parseISODate(dates[0]);
   const lastDate = parseISODate(dates[dates.length - 1]);
-  if (!firstDate || !lastDate) return buildFallbackSnapshots(dates);
+  if (!firstDate || !lastDate) return [];
 
   const now = new Date();
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -375,7 +361,7 @@ export async function fetchJapanClimateSeries(
       signal: AbortSignal.timeout(9000),
     });
     if (!res.ok) {
-      return buildFallbackSnapshots(dates);
+      return buildMomijiOnlySnapshots(dates);
     }
 
     const raw = (await res.json()) as
@@ -383,7 +369,7 @@ export async function fetchJapanClimateSeries(
       | OpenMeteoSingleResponse;
     const list = Array.isArray(raw) ? raw : [raw];
     if (list.length !== JAPAN_STATIONS.length) {
-      return buildFallbackSnapshots(dates);
+      return buildMomijiOnlySnapshots(dates);
     }
 
     return dates.map((tripDate, idx) => {
@@ -396,9 +382,9 @@ export async function fetchJapanClimateSeries(
         const tIdx = daily?.time?.indexOf(targetQueryDate) ?? idx;
         const safeIdx = tIdx >= 0 ? tIdx : Math.min(idx, (daily?.time?.length ?? 1) - 1);
 
-        const tempMean = daily?.temperature_2m_mean?.[safeIdx] ?? st.baselineNovTempC;
-        const tempMin = daily?.temperature_2m_min?.[safeIdx] ?? tempMean - 4;
-        const tempMax = daily?.temperature_2m_max?.[safeIdx] ?? tempMean + 4;
+        const tempMean = daily?.temperature_2m_mean?.[safeIdx] ?? 0;
+        const tempMin = daily?.temperature_2m_min?.[safeIdx] ?? tempMean;
+        const tempMax = daily?.temperature_2m_max?.[safeIdx] ?? tempMean;
         const precip = daily?.precipitation_sum?.[safeIdx] ?? 0;
         const snow = daily?.snowfall_sum?.[safeIdx] ?? 0;
         const momiji = computeMomijiForDate(st, tripDate);
@@ -427,6 +413,6 @@ export async function fetchJapanClimateSeries(
       };
     });
   } catch {
-    return buildFallbackSnapshots(dates);
+    return buildMomijiOnlySnapshots(dates);
   }
 }

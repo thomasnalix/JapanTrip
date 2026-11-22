@@ -4,8 +4,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   Calendar,
   Cloud,
+  CloudOff,
   Download,
-  HardDrive,
   Upload,
   UserCheck,
   X,
@@ -18,7 +18,6 @@ import {
   TripDataSchema,
   TripSettings,
 } from '@/lib/schemas';
-import type { StorageMode } from '@/lib/storage';
 
 interface SettingsModalProps {
   open: boolean;
@@ -26,7 +25,8 @@ interface SettingsModalProps {
   activeAuthor: Author | null;
   settings: TripSettings;
   tripData: TripData;
-  storageMode: StorageMode;
+  matchedEnvKey: string | null;
+  syncError: string | null;
   onSelectAuthor: (author: Author) => void;
   onSaveSettings: (settings: TripSettings) => void;
   onImportTripData: (data: TripData) => void;
@@ -39,7 +39,8 @@ export function SettingsModal({
   activeAuthor,
   settings,
   tripData,
-  storageMode,
+  matchedEnvKey,
+  syncError,
   onSelectAuthor,
   onSaveSettings,
   onImportTripData,
@@ -202,16 +203,14 @@ export function SettingsModal({
           <div className="space-y-2.5 rounded-lg border border-zinc-200 bg-zinc-50 p-3.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-medium text-zinc-800">
-                {storageMode === 'upstash' ? (
+                {matchedEnvKey && !syncError ? (
                   <Cloud className="h-4 w-4 text-emerald-600" />
                 ) : (
-                  <HardDrive className="h-4 w-4 text-amber-600" />
+                  <CloudOff className="h-4 w-4 text-[#C83228]" />
                 )}
-                {storageMode === 'upstash'
-                  ? 'Upstash Redis connecté'
-                  : storageMode === 'local-file'
-                    ? 'Stockage local (data/trip-data.json)'
-                    : 'Mode navigateur (ajouter Upstash sur Vercel)'}
+                {matchedEnvKey && !syncError
+                  ? `Upstash Redis connecté (${matchedEnvKey})`
+                  : syncError || 'Upstash Redis non configuré'}
               </span>
             </div>
 

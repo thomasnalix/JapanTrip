@@ -1,33 +1,23 @@
-# Japon — Carte & Planning (Nell & Thomas)
+# Japon
 
-Application web simple et typée (Next.js + TypeScript + MapLibre GL JS + Zod) pour préparer notre voyage au Japon à deux, déployable gratuitement sur Vercel.
+Application web Next.js + TypeScript + MapLibre GL JS + Upstash Redis pour préparer un voyage au Japon à deux (Nell & Thomas).
 
-## Fonctionnalités
+## Développement local (connecté à l'Upstash Redis de Vercel)
 
-- **Carte plein écran du Japon** (couleurs chaleureuses OpenFreeMap *Washi & Terracotta*, zoom libre, bornée sur tout le Japon d'Okinawa à Hokkaido).
-- **Onglet Activités** :
-  - Ajout par **recherche** (Photon / OpenStreetMap Nominatim limité au Japon, auto-complétion du nom, description, adresse et catégorie).
-  - Ajout **manuel** en cliquant directement sur la carte.
-  - Filtres multi-catégories (`Restaurant`, `Café & Bar`, `Temple & Culture`, `Nature & Vue`, `Shopping`, `Hébergement`, `Transport`, `Expérience`, `Autre`).
-  - Jauge circulaire de note (`0` à `5`) colorée selon la catégorie directement visible sur les marqueurs.
-  - Édition à la volée : carrousel photo (URL ou import compressé), notes, prix, période idéale, jusqu'à 10 liens cliquables/supprimables.
-  - **Identité Nell / Thomas** mémorisée à vie sans login + historique de qui a créé ou modifié chaque activité.
-- **Onglet Étapes & Météo** :
-  - Planification des grandes étapes (avions internes, Shinkansen/trains, ferries, bus, hôtels, étapes clés) avec tracés d'itinéraire.
-  - Timeline en bas de l'écran alignée sur les dates de voyage des paramètres.
-  - 4 couches cartographiques gratuites et mises en cache pilotées par la timeline : **Température**, **Momiji (紅葉)**, **Neige**, **Précipitations** (via Open-Meteo + courbe saisonnière Momiji).
+1. Installer les dépendances :
+   ```bash
+   npm install
+   ```
+2. Récupérer les variables d'environnement Vercel (dont votre base Upstash `japantrip`) :
+   ```bash
+   npx vercel env pull .env.local
+   ```
+3. Lancer le serveur de développement :
+   ```bash
+   npm run dev
+   ```
 
-## Développement local
+## Stockage & Cache Redis
 
-```bash
-npm install
-npm run dev
-```
-
-En local sans base cloud configurée, les données sont sauvegardées automatiquement dans `data/trip-data.json`.
-
-## Déploiement sur Vercel (gratuit + synchro Nell & Thomas)
-
-1. Pousser le projet sur GitHub et l'importer sur [Vercel](https://vercel.com).
-2. Dans Vercel (**Storage** ou **Marketplace**), créer une base **Upstash Redis** gratuite (ou **Vercel KV**) et la connecter au projet (cela ajoute `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN`).
-3. Redéployer : Nell et Thomas partagent alors exactement les mêmes données en temps réel.
+- **Données partagées** (`japantrip:data:v1`) : activités, liens, photos compressées, étapes et dates de voyage stockés dans Upstash Redis.
+- **Cache météo** (`japantrip:climate:v2:...`) : réponses Open-Meteo mises en cache dans Upstash Redis (3h pour les prévisions, 24h pour l'archive) afin de ne pas solliciter les API météo à chaque chargement.

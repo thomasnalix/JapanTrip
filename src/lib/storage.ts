@@ -1,6 +1,4 @@
 import { Redis } from '@upstash/redis';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import {
   createDefaultTripData,
   TripData,
@@ -8,94 +6,130 @@ import {
   TripMutation,
 } from './schemas';
 
-export type StorageMode = 'upstash' | 'local-file' | 'ephemeral';
-
 const TRIP_REDIS_KEY = 'japantrip:data:v1';
-const LOCAL_DATA_FILE = path.join(process.cwd(), 'data', 'trip-data.json');
 
-let memoryFallback: TripData | null = null;
-
-function getRedisClient(): Redis | null {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return null;
-  return new Redis({ url, token });
+interface RedisCredentials {
+  url: string;
+  token: string;
+  matchedEnvKey: string;
 }
 
-export function getStorageMode(): StorageMode {
-  if (getRedisClient()) return 'upstash';
-  if (process.env.VERCEL) return 'ephemeral';
-  return 'local-file';
+/**
+ * Resolve Upstash / Vercel KV REST credentials regardless of prefix
+ * (e.g. UPSTASH_REDIS_REST_URL, KV_REST_API_URL, japantrip_KV_REST_API_URL, japantrip_REDIS_URL).
+ */
+function findRedisCredentials(): RedisCredentials | null {
+  const env = process.env;
+
+  const directPairs: [string, string][] = [
+    ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'],
+    ['KV_REST_API_URL', 'KV_REST_API_TOKEN'],
+  ];
+
+  for (const [urlKey, tokenKey] of directPairs) {
+    const url = env[urlKey];
+    const token = env[tokenKey];
+    if (url && token) {
+      return { url, token, matchedEnvKey: urlKey };
+    }
+  }
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!value || !value.startsWith('https://')) continue;
+    const upper = key.toUpperCase();
+
+    if (upper.endsWith('_KV_REST_API_URL')) {
+      const prefix = key.slice(0, key.length - '_KV_REST_API_URL'.length);
+      const token =
+        env[`${prefix}_KV_REST_API_TOKEN`] ||
+        env[`${prefix}_kv_rest_api_token`];
+      if (token) return { url: value, token, matchedEnvKey: key };
+    }
+
+    if (upper.endsWith('_UPSTASH_REDIS_REST_URL')) {
+      const prefix = key.slice(
+        0,
+        key.length - '_UPSTASH_REDIS_REST_URL'.length
+      );
+      const token = env[`${prefix}_UPSTASH_REDIS_REST_TOKEN`];
+      if (token) return { url: value, token, matchedEnvKey: key };
+    }
+
+    if (upper.endsWith('_REDIS_REST_URL') || upper.endsWith('_REST_API_URL')) {
+      const tokenKey = key.replace(/URL$/i, 'TOKEN');
+      const token = env[tokenKey];
+      if (token) return { url: value, token, matchedEnvKey: key };
+    }
+  }
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!value || (!value.startsWith('rediss://') && !value.startsWith('redis://'))) {
+      continue;
+    }
+    try {
+      const parsed = new URL(value);
+      if (parsed.hostname.endsWith('.upstash.io') && parsed.password) {
+        return {
+          url: `https://${parsed.hostname}`,
+          token: decodeURIComponent(parsed.password),
+          matchedEnvKey: key,
+        };
+      }
+    } catch {
+      // Ignore malformed URL
+    }
+  }
+
+  return null;
+}
+
+function getRedis(): { client: Redis; matchedEnvKey: string } {
+  const creds = findRedisCredentials();
+  if (!creds) {
+    throw new Error(
+      'Variables Upstash Redis introuvables. En local, lancez `vercel env pull .env.local`.'
+    );
+  }
+  return {
+    client: new Redis({ url: creds.url, token: creds.token }),
+    matchedEnvKey: creds.matchedEnvKey,
+  };
 }
 
 export async function readTripData(): Promise<{
   data: TripData;
-  storageMode: StorageMode;
+  matchedEnvKey: string;
 }> {
-  const redis = getRedisClient();
-  if (redis) {
-    const raw = await redis.get<unknown>(TRIP_REDIS_KEY);
-    if (raw) {
-      const parsed = TripDataSchema.safeParse(raw);
-      if (parsed.success) {
-        return { data: parsed.data, storageMode: 'upstash' };
-      }
-    }
-    const initial = createDefaultTripData();
-    await redis.set(TRIP_REDIS_KEY, initial);
-    return { data: initial, storageMode: 'upstash' };
-  }
-
-  try {
-    const text = await fs.readFile(LOCAL_DATA_FILE, 'utf8');
-    const parsed = TripDataSchema.safeParse(JSON.parse(text));
+  const { client, matchedEnvKey } = getRedis();
+  const raw = await client.get<unknown>(TRIP_REDIS_KEY);
+  if (raw) {
+    const parsed = TripDataSchema.safeParse(raw);
     if (parsed.success) {
-      return { data: parsed.data, storageMode: getStorageMode() };
+      return { data: parsed.data, matchedEnvKey };
     }
-  } catch {
-    // File does not exist yet or filesystem is read-only
-  }
-
-  if (memoryFallback) {
-    return { data: memoryFallback, storageMode: getStorageMode() };
   }
 
   const initial = createDefaultTripData();
-  await writeTripData(initial);
-  return { data: initial, storageMode: getStorageMode() };
+  await client.set(TRIP_REDIS_KEY, initial);
+  return { data: initial, matchedEnvKey };
 }
 
-export async function writeTripData(data: TripData): Promise<StorageMode> {
+export async function writeTripData(data: TripData): Promise<{
+  matchedEnvKey: string;
+}> {
+  const { client, matchedEnvKey } = getRedis();
   const validated = TripDataSchema.parse({
     ...data,
     updatedAt: new Date().toISOString(),
   });
-
-  const redis = getRedisClient();
-  if (redis) {
-    await redis.set(TRIP_REDIS_KEY, validated);
-    return 'upstash';
-  }
-
-  memoryFallback = validated;
-  try {
-    await fs.mkdir(path.dirname(LOCAL_DATA_FILE), { recursive: true });
-    await fs.writeFile(
-      LOCAL_DATA_FILE,
-      JSON.stringify(validated, null, 2),
-      'utf8'
-    );
-    return 'local-file';
-  } catch {
-    return 'ephemeral';
-  }
+  await client.set(TRIP_REDIS_KEY, validated);
+  return { matchedEnvKey };
 }
 
-export async function applyTripMutation(
-  mutation: TripMutation
-): Promise<{ data: TripData; storageMode: StorageMode }> {
+export async function applyTripMutation(mutation: TripMutation): Promise<{
+  data: TripData;
+  matchedEnvKey: string;
+}> {
   const { data: current } = await readTripData();
   let next: TripData = current;
 
@@ -156,14 +190,35 @@ export async function applyTripMutation(
     version: current.version + 1,
     updatedAt: new Date().toISOString(),
   });
-  const storageMode = await writeTripData(normalized);
-  return { data: normalized, storageMode };
+  const { matchedEnvKey } = await writeTripData(normalized);
+  return { data: normalized, matchedEnvKey };
 }
 
-/**
- * Process-memory only cache for geocode and climate queries.
- * Keeps Upstash Redis free plan strictly reserved for Nell & Thomas's trip data.
- */
+/** Cache climate API responses in Redis (with TTL) so Open-Meteo is not hit repeatedly. */
+export async function getRedisCache<T>(key: string): Promise<T | null> {
+  try {
+    const { client } = getRedis();
+    const hit = await client.get<T>(key);
+    return hit ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setRedisCache(
+  key: string,
+  value: unknown,
+  ttlSeconds: number
+): Promise<void> {
+  try {
+    const { client } = getRedis();
+    await client.set(key, value, { ex: ttlSeconds });
+  } catch {
+    // Non-fatal cache write error
+  }
+}
+
+/** Lightweight in-memory cache for autocomplete geocode queries. */
 const memoryCache = new Map<string, { expiresAt: number; payload: unknown }>();
 
 export function getMemoryCache<T>(key: string): T | null {
@@ -179,7 +234,7 @@ export function setMemoryCache(
   value: unknown,
   ttlSeconds: number
 ): void {
-  if (memoryCache.size > 250) {
+  if (memoryCache.size > 200) {
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) memoryCache.delete(firstKey);
   }

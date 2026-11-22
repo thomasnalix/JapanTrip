@@ -1,7 +1,7 @@
 'use client';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { MapPinPlus, SlidersHorizontal } from 'lucide-react';
+import { MapPinPlus, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
 import {
@@ -26,20 +26,19 @@ import {
   createDefaultTripData,
   SearchPlaceResult,
   TripData,
-  TripDataSchema,
   TripMutation,
   TripSettings,
   TripStep,
   WeatherLayerType,
 } from '@/lib/schemas';
-import type { StorageMode } from '@/lib/storage';
 
 const AUTHOR_STORAGE_KEY = 'japantrip:active-author';
-const LOCAL_TRIP_BACKUP_KEY = 'japantrip:trip-data-backup';
 
 export default function HomePage() {
   const [tripData, setTripData] = useState<TripData>(createDefaultTripData);
-  const [storageMode, setStorageMode] = useState<StorageMode>('local-file');
+  const [matchedEnvKey, setMatchedEnvKey] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [activeAuthor, setActiveAuthor] = useState<Author | null>(null);
   const [authorChecked, setAuthorChecked] = useState(false);
 
@@ -76,7 +75,6 @@ export default function HomePage() {
   const [climateLoading, setClimateLoading] = useState(false);
   const lastFetchAtRef = useRef(0);
 
-  // Load persisted Nell/Thomas identity forever from localStorage
   useEffect(() => {
     const saved = localStorage.getItem(AUTHOR_STORAGE_KEY);
     const parsed = AuthorSchema.safeParse(saved);
@@ -88,46 +86,38 @@ export default function HomePage() {
 
   const fetchTripData = useCallback(async (force = false) => {
     const now = Date.now();
-    if (!force && now - lastFetchAtRef.current < 15_000) return;
+    if (!force && now - lastFetchAtRef.current < 10_000) return;
     lastFetchAtRef.current = now;
+    setSyncing(true);
 
     try {
       const res = await fetch('/api/trip', { cache: 'no-store' });
-      if (!res.ok) return;
       const json = (await res.json()) as {
-        data: TripData;
-        storageMode: StorageMode;
+        data?: TripData;
+        matchedEnvKey?: string;
+        error?: string;
       };
-      setStorageMode(json.storageMode);
-      if (json.storageMode === 'ephemeral') {
-        const localRaw = localStorage.getItem(LOCAL_TRIP_BACKUP_KEY);
-        if (localRaw) {
-          const parsed = TripDataSchema.safeParse(JSON.parse(localRaw));
-          if (parsed.success) {
-            setTripData(parsed.data);
-            return;
-          }
-        }
+      if (!res.ok || !json.data) {
+        setSyncError(json.error ?? 'Redis non connecté');
+        return;
       }
+      setMatchedEnvKey(json.matchedEnvKey ?? null);
+      setSyncError(null);
       setTripData(json.data);
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(json.data));
     } catch {
-      const localRaw = localStorage.getItem(LOCAL_TRIP_BACKUP_KEY);
-      if (localRaw) {
-        const parsed = TripDataSchema.safeParse(JSON.parse(localRaw));
-        if (parsed.success) setTripData(parsed.data);
-      }
+      setSyncError('Erreur réseau');
+    } finally {
+      setSyncing(false);
     }
   }, []);
 
-  // Gentle polling (60s only when tab visible + on focus) to stay well within Upstash Free Plan
   useEffect(() => {
     void fetchTripData(true);
     const poll = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void fetchTripData();
       }
-    }, 60_000);
+    }, 20_000);
     const onFocus = () => void fetchTripData();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -136,7 +126,7 @@ export default function HomePage() {
     };
   }, [fetchTripData]);
 
-  // Fetch & cache climate/momiji series in browser localStorage
+  // Climate data is cached server-side in Upstash Redis + browser localStorage
   useEffect(() => {
     const start = tripData.settings.startDate;
     const end = tripData.settings.endDate;
@@ -185,23 +175,29 @@ export default function HomePage() {
   }, [tripData.settings.startDate, tripData.settings.endDate]);
 
   async function mutateTrip(mutation: TripMutation) {
+    setSyncing(true);
     try {
       const res = await fetch('/api/trip', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mutation),
       });
-      if (res.ok) {
-        const json = (await res.json()) as {
-          data: TripData;
-          storageMode: StorageMode;
-        };
-        setStorageMode(json.storageMode);
-        setTripData(json.data);
-        localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(json.data));
+      const json = (await res.json()) as {
+        data?: TripData;
+        matchedEnvKey?: string;
+        error?: string;
+      };
+      if (!res.ok || !json.data) {
+        setSyncError(json.error ?? 'Échec de sauvegarde Redis');
+        return;
       }
+      setMatchedEnvKey(json.matchedEnvKey ?? null);
+      setSyncError(null);
+      setTripData(json.data);
     } catch {
-      // Keep optimistic local backup
+      setSyncError('Erreur réseau lors de la sauvegarde');
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -294,9 +290,7 @@ export default function HomePage() {
       const activities = exists
         ? prev.activities.map((a) => (a.id === updated.id ? updated : a))
         : [updated, ...prev.activities];
-      const next = { ...prev, activities };
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(next));
-      return next;
+      return { ...prev, activities };
     });
     if (closeAfter) {
       setActiveActivity(null);
@@ -307,14 +301,10 @@ export default function HomePage() {
   }
 
   function handleDeleteActivity(id: string) {
-    setTripData((prev) => {
-      const next = {
-        ...prev,
-        activities: prev.activities.filter((a) => a.id !== id),
-      };
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(next));
-      return next;
-    });
+    setTripData((prev) => ({
+      ...prev,
+      activities: prev.activities.filter((a) => a.id !== id),
+    }));
     setActiveActivity(null);
     void mutateTrip({ action: 'delete_activity', id });
   }
@@ -327,9 +317,7 @@ export default function HomePage() {
           ? prev.tripSteps.map((s) => (s.id === step.id ? step : s))
           : [...prev.tripSteps, step]
       ).sort((a, b) => a.date.localeCompare(b.date));
-      const next = { ...prev, tripSteps };
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(next));
-      return next;
+      return { ...prev, tripSteps };
     });
     setActiveStepModal(null);
     setFocusTarget({
@@ -342,30 +330,21 @@ export default function HomePage() {
   }
 
   function handleDeleteStep(id: string) {
-    setTripData((prev) => {
-      const next = {
-        ...prev,
-        tripSteps: prev.tripSteps.filter((s) => s.id !== id),
-      };
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(next));
-      return next;
-    });
+    setTripData((prev) => ({
+      ...prev,
+      tripSteps: prev.tripSteps.filter((s) => s.id !== id),
+    }));
     setActiveStepModal(null);
     void mutateTrip({ action: 'delete_step', id });
   }
 
   function handleSaveSettings(settings: TripSettings) {
-    setTripData((prev) => {
-      const next = { ...prev, settings };
-      localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(next));
-      return next;
-    });
+    setTripData((prev) => ({ ...prev, settings }));
     void mutateTrip({ action: 'update_settings', settings });
   }
 
   function handleImportTripData(data: TripData) {
     setTripData(data);
-    localStorage.setItem(LOCAL_TRIP_BACKUP_KEY, JSON.stringify(data));
     void mutateTrip({ action: 'replace_all', data });
   }
 
@@ -463,8 +442,35 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Author badge + Settings */}
+        {/* Sync status + Refresh + Author badge + Settings */}
         <div className="pointer-events-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void fetchTripData(true)}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm backdrop-blur-md transition ${
+              syncError
+                ? 'border-red-200 bg-red-50/95 text-[#C83228]'
+                : 'border-zinc-200 bg-white/95 text-zinc-700 hover:bg-zinc-50'
+            }`}
+            title={
+              syncError
+                ? syncError
+                : matchedEnvKey
+                  ? `Synchronisé via Redis (${matchedEnvKey})`
+                  : 'Synchroniser'
+            }
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                syncError ? 'bg-[#C83228]' : 'bg-emerald-500'
+              }`}
+            />
+            <span className="hidden sm:inline">
+              {syncError ? 'Redis hors ligne' : 'Sync'}
+            </span>
+            <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+          </button>
+
           {activeAuthor && (
             <button
               type="button"
@@ -489,7 +495,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Activities Mode Overlay: Search + Manual Point + Full-Width Category Pills (no scroller) */}
+      {/* Activities Mode Overlay */}
       {mode === 'activities' && (
         <div className="pointer-events-none fixed left-3 right-3 top-[60px] z-20 flex flex-col gap-2 sm:left-4 sm:right-4">
           <div className="pointer-events-auto flex w-full max-w-md items-center gap-2">
@@ -513,7 +519,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Full-width wrapping Category Filter Bar (zero horizontal scroller) */}
+          {/* Full-width wrapping Category Filter Bar */}
           <div className="pointer-events-auto flex w-full flex-wrap items-center gap-1.5">
             <button
               type="button"
@@ -580,12 +586,9 @@ export default function HomePage() {
                 title: '',
                 type: 'train',
                 date: activeDate,
-                fromName: 'Tokyo',
-                fromLat: 35.6812,
-                fromLng: 139.7671,
-                toName: 'Kyoto',
-                toLat: 34.9858,
-                toLng: 135.7588,
+                fromName: '',
+                fromLat: 35.68,
+                fromLng: 139.77,
                 note: '',
                 booked: false,
                 createdBy: author,
@@ -648,7 +651,8 @@ export default function HomePage() {
         activeAuthor={activeAuthor}
         settings={tripData.settings}
         tripData={tripData}
-        storageMode={storageMode}
+        matchedEnvKey={matchedEnvKey}
+        syncError={syncError}
         onSelectAuthor={handleSelectAuthor}
         onSaveSettings={handleSaveSettings}
         onImportTripData={handleImportTripData}
