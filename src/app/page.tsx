@@ -1,13 +1,8 @@
 'use client';
 
-import {
-  Compass,
-  Map as MapIcon,
-  MapPinPlus,
-  Settings,
-  SlidersHorizontal,
-} from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { MapPinPlus, SlidersHorizontal } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityDrawer } from '@/components/ActivityDrawer';
 import {
   AppMode,
@@ -19,6 +14,7 @@ import { SearchPlaceBar } from '@/components/SearchPlaceBar';
 import { SettingsModal } from '@/components/SettingsModal';
 import { TimelineBar } from '@/components/TimelineBar';
 import { TripStepModal } from '@/components/TripStepModal';
+import { CATEGORY_ICONS, UI_ICONS } from '@/lib/icons';
 import { getTripDays } from '@/lib/japan-bounds';
 import {
   Activity,
@@ -64,7 +60,6 @@ export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<MapFocusTarget | null>(null);
 
-  // Timeline & Climate layers
   const tripDays = useMemo(
     () =>
       getTripDays(tripData.settings.startDate, tripData.settings.endDate),
@@ -79,6 +74,7 @@ export default function HomePage() {
   );
   const [climateSeries, setClimateSeries] = useState<ClimateDaySnapshot[]>([]);
   const [climateLoading, setClimateLoading] = useState(false);
+  const lastFetchAtRef = useRef(0);
 
   // Load persisted Nell/Thomas identity forever from localStorage
   useEffect(() => {
@@ -90,7 +86,11 @@ export default function HomePage() {
     setAuthorChecked(true);
   }, []);
 
-  const fetchTripData = useCallback(async () => {
+  const fetchTripData = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastFetchAtRef.current < 15_000) return;
+    lastFetchAtRef.current = now;
+
     try {
       const res = await fetch('/api/trip', { cache: 'no-store' });
       if (!res.ok) return;
@@ -120,19 +120,27 @@ export default function HomePage() {
     }
   }, []);
 
+  // Gentle polling (60s only when tab visible + on focus) to stay well within Upstash Free Plan
   useEffect(() => {
-    void fetchTripData();
+    void fetchTripData(true);
     const poll = setInterval(() => {
-      void fetchTripData();
-    }, 25_000);
-    return () => clearInterval(poll);
+      if (document.visibilityState === 'visible') {
+        void fetchTripData();
+      }
+    }, 60_000);
+    const onFocus = () => void fetchTripData();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [fetchTripData]);
 
-  // Fetch & cache climate/momiji series whenever trip dates change
+  // Fetch & cache climate/momiji series in browser localStorage
   useEffect(() => {
     const start = tripData.settings.startDate;
     const end = tripData.settings.endDate;
-    const cacheKey = `japantrip:climate:${start}:${end}`;
+    const cacheKey = `japantrip:climate:v2:${start}:${end}`;
 
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {
@@ -225,7 +233,12 @@ export default function HomePage() {
     };
     setPickOnMap(false);
     setActiveActivity({ activity: draft, isNew: true });
-    setFocusTarget({ lat: place.lat, lng: place.lng, zoom: 13.5, nonce: Date.now() });
+    setFocusTarget({
+      lat: place.lat,
+      lng: place.lng,
+      zoom: 13.5,
+      nonce: Date.now(),
+    });
   }
 
   const handleMapClickCoordinates = useCallback(
@@ -319,7 +332,12 @@ export default function HomePage() {
       return next;
     });
     setActiveStepModal(null);
-    setFocusTarget({ lat: step.fromLat, lng: step.fromLng, zoom: 7.5, nonce: Date.now() });
+    setFocusTarget({
+      lat: step.fromLat,
+      lng: step.fromLng,
+      zoom: 7.5,
+      nonce: Date.now(),
+    });
     void mutateTrip({ action: 'upsert_step', step });
   }
 
@@ -370,9 +388,13 @@ export default function HomePage() {
   );
 
   const mustPickAuthor = authorChecked && !activeAuthor;
+  const displayTitle =
+    tripData.settings.tripTitle === 'Japon — Nell & Thomas'
+      ? 'Japon'
+      : tripData.settings.tripTitle;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#FAF2E6]">
+    <main className="relative h-screen w-screen overflow-hidden bg-zinc-50">
       {/* Fullscreen Map */}
       <JapanMap
         mode={mode}
@@ -401,26 +423,25 @@ export default function HomePage() {
 
       {/* Top Navigation Bar */}
       <header className="pointer-events-none fixed left-3 right-3 top-3 z-30 flex flex-wrap items-center justify-between gap-2 sm:left-4 sm:right-4">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-[#DFCBB7] bg-[#FDF9F2]/94 px-3 py-1.5 shadow-md backdrop-blur-md">
-          <span className="text-base">🇯🇵</span>
-          <span className="hidden text-sm font-bold text-[#3B2B22] sm:inline">
-            {tripData.settings.tripTitle}
+        <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-zinc-200 bg-white/95 px-3 py-1.5 shadow-sm backdrop-blur-md">
+          <span className="text-sm font-semibold tracking-tight text-zinc-900">
+            {displayTitle}
           </span>
 
-          <div className="ml-1 flex rounded-xl bg-[#EFE3D2] p-0.5 text-xs font-semibold">
+          <div className="ml-1 flex rounded-lg bg-zinc-100 p-0.5 text-xs font-medium">
             <button
               type="button"
               onClick={() => {
                 setMode('activities');
                 setPickOnMap(false);
               }}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition ${
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
                 mode === 'activities'
-                  ? 'bg-white text-[#D95338] shadow-sm'
-                  : 'text-[#6D5647] hover:text-[#3B2B22]'
+                  ? 'bg-[#C83228] text-white shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              <MapIcon className="h-3.5 w-3.5" />
+              <FontAwesomeIcon icon={UI_ICONS.map} className="text-[11px]" />
               <span>Activités</span>
             </button>
             <button
@@ -430,13 +451,13 @@ export default function HomePage() {
                 setPickOnMap(false);
                 setActiveActivity(null);
               }}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition ${
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
                 mode === 'planning'
-                  ? 'bg-white text-[#2D6A7E] shadow-sm'
-                  : 'text-[#6D5647] hover:text-[#3B2B22]'
+                  ? 'bg-[#C83228] text-white shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              <Compass className="h-3.5 w-3.5" />
+              <FontAwesomeIcon icon={UI_ICONS.compass} className="text-[11px]" />
               <span>Étapes & Météo</span>
             </button>
           </div>
@@ -448,37 +469,40 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-1.5 rounded-2xl border border-[#DFCBB7] bg-[#FDF9F2]/94 px-3 py-1.5 text-xs font-bold text-[#3B2B22] shadow-md backdrop-blur-md transition hover:bg-[#F5EADC]"
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm backdrop-blur-md transition hover:bg-zinc-50"
             >
-              <span>{activeAuthor === 'Nell' ? '🌸' : '🗻'}</span>
+              <FontAwesomeIcon
+                icon={UI_ICONS.user}
+                className="text-[11px] text-[#C83228]"
+              />
               <span>{activeAuthor}</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[#DFCBB7] bg-[#FDF9F2]/94 text-[#5D493C] shadow-md backdrop-blur-md transition hover:bg-[#F5EADC]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white/95 text-zinc-600 shadow-sm backdrop-blur-md transition hover:bg-zinc-50 hover:text-zinc-900"
             title="Paramètres"
           >
-            <Settings className="h-4 w-4" />
+            <FontAwesomeIcon icon={UI_ICONS.settings} className="text-xs" />
           </button>
         </div>
       </header>
 
-      {/* Activities Mode Overlay: Search + Manual Point + Category Filter Pills */}
+      {/* Activities Mode Overlay: Search + Manual Point + Full-Width Category Pills (no scroller) */}
       {mode === 'activities' && (
-        <div className="pointer-events-none fixed left-3 right-3 top-[68px] z-20 flex flex-col gap-2 sm:left-4 sm:right-auto sm:w-[440px]">
-          <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-none fixed left-3 right-3 top-[60px] z-20 flex flex-col gap-2 sm:left-4 sm:right-4">
+          <div className="pointer-events-auto flex w-full max-w-md items-center gap-2">
             <div className="flex-1">
               <SearchPlaceBar onSelectPlace={handleSelectPlaceForActivity} />
             </div>
             <button
               type="button"
               onClick={() => setPickOnMap((p) => !p)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2.5 text-xs font-semibold shadow-sm backdrop-blur-md transition ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm backdrop-blur-md transition ${
                 pickOnMap
-                  ? 'border-[#D95338] bg-[#D95338] text-white'
-                  : 'border-[#DFCBB7] bg-[#FDF9F2]/95 text-[#3B2B22] hover:bg-[#F5EADC]'
+                  ? 'border-[#C83228] bg-[#C83228] text-white'
+                  : 'border-zinc-200 bg-white/95 text-zinc-800 hover:bg-zinc-50'
               }`}
               title="Ajouter manuellement en cliquant sur la carte"
             >
@@ -489,15 +513,15 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Multi-select Category Filter Bar */}
-          <div className="pointer-events-auto flex items-center gap-1.5 overflow-x-auto pb-1">
+          {/* Full-width wrapping Category Filter Bar (zero horizontal scroller) */}
+          <div className="pointer-events-auto flex w-full flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => setSelectedCategories([])}
-              className={`flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-xs transition ${
+              className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium shadow-xs transition ${
                 selectedCategories.length === 0
-                  ? 'border-[#3B2B22] bg-[#3B2B22] text-white'
-                  : 'border-[#DFCBB7] bg-[#FDF9F2]/92 text-[#5D493C] hover:bg-[#F5EADC]'
+                  ? 'border-zinc-900 bg-zinc-900 text-white'
+                  : 'border-zinc-200 bg-white/95 text-zinc-700 hover:bg-zinc-50'
               }`}
             >
               <SlidersHorizontal className="h-3 w-3" />
@@ -514,18 +538,20 @@ export default function HomePage() {
                   key={cat.id}
                   type="button"
                   onClick={() => toggleCategoryFilter(cat.id)}
-                  className={`flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-xs transition ${
+                  className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium shadow-xs transition ${
                     active
-                      ? 'border-transparent text-white shadow-sm'
-                      : 'border-[#DFCBB7] bg-[#FDF9F2]/92 text-[#4A382D] hover:bg-[#F5EADC]'
+                      ? 'border-transparent text-white shadow-xs'
+                      : 'border-zinc-200 bg-white/95 text-zinc-700 hover:bg-zinc-50'
                   }`}
                   style={active ? { backgroundColor: cat.color } : undefined}
                 >
-                  <span>{cat.emoji}</span>
+                  <FontAwesomeIcon
+                    icon={CATEGORY_ICONS[cat.id]}
+                    className="text-[11px]"
+                    style={!active ? { color: cat.color } : undefined}
+                  />
                   <span>{cat.label}</span>
-                  {count > 0 && (
-                    <span className="opacity-75">({count})</span>
-                  )}
+                  {count > 0 && <span className="opacity-70">({count})</span>}
                 </button>
               );
             })}

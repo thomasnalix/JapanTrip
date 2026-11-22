@@ -1,15 +1,20 @@
 'use client';
 
-import { LocateFixed, Minus, Plus } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { LocateFixed, Minus, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { CATEGORY_ICONS, getFaSvgParts, STEP_ICONS } from '@/lib/icons';
 import {
   JAPAN_CENTER,
   JAPAN_INITIAL_BOUNDS,
   JAPAN_MAX_BOUNDS,
   isInsideJapan,
 } from '@/lib/japan-bounds';
-import { formatLayerPill, getLayerColor } from '@/lib/japan-climate';
+import {
+  formatLayerPill,
+  getLayerColor,
+  interpolateClimateAt,
+} from '@/lib/japan-climate';
 import { getWarmJapanMapStyle } from '@/lib/map-style';
 import {
   Activity,
@@ -29,6 +34,25 @@ export interface MapFocusTarget {
   nonce: number;
 }
 
+interface PrefectureFeature {
+  type: 'Feature';
+  properties: {
+    id: number;
+    name: string;
+    centroidLat?: number;
+    centroidLng?: number;
+    color?: string;
+    valueLabel?: string;
+    details?: string;
+  };
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+}
+
+interface PrefectureCollection {
+  type: 'FeatureCollection';
+  features: PrefectureFeature[];
+}
+
 interface JapanMapProps {
   mode: AppMode;
   activities: Activity[];
@@ -44,20 +68,39 @@ interface JapanMapProps {
   onSelectStep: (step: TripStep) => void;
 }
 
+const ZONING_SOURCE_ID = 'japan-zoning-source';
+const ZONING_FILL_LAYER_ID = 'japan-zoning-fill';
+const ZONING_LINE_LAYER_ID = 'japan-zoning-line';
 const ROUTES_SOURCE_ID = 'trip-routes-source';
 const ROUTES_LAYER_ID = 'trip-routes-layer';
-const CLIMATE_SOURCE_ID = 'climate-glow-source';
-const CLIMATE_LAYER_ID = 'climate-glow-layer';
 
-/** Build an SVG circular rating gauge marker DOM element for an activity. */
+function computePolygonCentroid(
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+): [number, number] {
+  const ring =
+    geometry.type === 'Polygon'
+      ? geometry.coordinates[0]
+      : geometry.coordinates[0]?.[0];
+  if (!ring || ring.length === 0) return [138, 36];
+  let sumLng = 0;
+  let sumLat = 0;
+  for (const pt of ring) {
+    sumLng += pt[0];
+    sumLat += pt[1];
+  }
+  return [sumLng / ring.length, sumLat / ring.length];
+}
+
+/** Build an SVG circular rating gauge marker with a crisp Font Awesome vector icon. */
 function createActivityMarkerElement(
   activity: Activity,
   isSelected: boolean,
   matchesTimelineDate: boolean
 ): HTMLButtonElement {
   const meta = CATEGORY_META[activity.category];
+  const fa = getFaSvgParts(CATEGORY_ICONS[activity.category]);
   const ratio = Math.max(0, Math.min(1, activity.rating / 5));
-  const radius = 17;
+  const radius = 16;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - ratio);
 
@@ -65,46 +108,46 @@ function createActivityMarkerElement(
   btn.type = 'button';
   btn.title = `${activity.name} (${activity.rating}/5)`;
   btn.className = 'group relative flex items-center justify-center outline-none';
-  btn.style.width = '42px';
-  btn.style.height = '42px';
+  btn.style.width = '40px';
+  btn.style.height = '40px';
   btn.style.cursor = 'pointer';
-  btn.style.transform = isSelected ? 'scale(1.22)' : 'scale(1)';
-  btn.style.transition = 'transform 150ms ease';
+  btn.style.transform = isSelected ? 'scale(1.2)' : 'scale(1)';
+  btn.style.transition = 'transform 140ms ease';
 
-  const ringColor = activity.rating > 0 ? meta.color : '#C9B8A6';
-  const trackColor = '#EDE2D4';
+  const ringColor = activity.rating > 0 ? meta.color : '#D4D4D8';
+  const trackColor = '#E4E4E7';
 
   btn.innerHTML = `
-    <svg width="42" height="42" viewBox="0 0 42 42" style="filter: drop-shadow(0 3px 6px rgba(59,43,34,0.22));">
-      <circle cx="21" cy="21" r="19" fill="#FDF9F2" />
+    <svg width="40" height="40" viewBox="0 0 40 40" style="filter: drop-shadow(0 2px 5px rgba(9,9,11,0.22));">
+      <circle cx="20" cy="20" r="18" fill="#FFFFFF" />
       <circle
-        cx="21" cy="21" r="${radius}"
+        cx="20" cy="20" r="${radius}"
         fill="none"
         stroke="${trackColor}"
-        stroke-width="3.6"
+        stroke-width="3.4"
       />
       <circle
-        cx="21" cy="21" r="${radius}"
+        cx="20" cy="20" r="${radius}"
         fill="none"
         stroke="${ringColor}"
-        stroke-width="3.6"
+        stroke-width="3.4"
         stroke-linecap="round"
         stroke-dasharray="${circumference.toFixed(2)}"
         stroke-dashoffset="${dashOffset.toFixed(2)}"
-        transform="rotate(-90 21 21)"
+        transform="rotate(-90 20 20)"
       />
       ${
         isSelected
-          ? `<circle cx="21" cy="21" r="20" fill="none" stroke="#3B2B22" stroke-width="1.6" />`
+          ? `<circle cx="20" cy="20" r="19" fill="none" stroke="#09090B" stroke-width="1.5" />`
           : ''
       }
+      <svg x="12.5" y="12.5" width="15" height="15" viewBox="0 0 ${fa.width} ${fa.height}">
+        <path d="${fa.path}" fill="${meta.color}" />
+      </svg>
     </svg>
-    <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;">
-      ${meta.emoji}
-    </span>
     ${
       matchesTimelineDate
-        ? `<span title="Période idéale !" style="position:absolute;top:0;right:0;width:10px;height:10px;border-radius:9999px;background:#EAB308;border:2px solid #FDF9F2;"></span>`
+        ? `<span title="Période idéale" style="position:absolute;top:0;right:0;width:9px;height:9px;border-radius:9999px;background:#C83228;border:2px solid #FFFFFF;"></span>`
         : ''
     }
   `;
@@ -116,41 +159,27 @@ function createStepMarkerElement(
   isToday: boolean
 ): HTMLButtonElement {
   const meta = STEP_TYPE_META[step.type];
+  const fa = getFaSvgParts(STEP_ICONS[step.type]);
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.title = `${step.title} (${step.date})`;
   btn.style.cursor = 'pointer';
-  btn.className = 'flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-white shadow-md transition hover:scale-105';
+  btn.className =
+    'flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-white shadow-md transition hover:scale-105';
   btn.style.backgroundColor = meta.color;
-  btn.style.border = isToday ? '2.5px solid #FDF9F2' : '1.5px solid rgba(255,255,255,0.85)';
+  btn.style.border = isToday
+    ? '2px solid #FFFFFF'
+    : '1px solid rgba(255,255,255,0.75)';
   btn.style.boxShadow = isToday
-    ? '0 0 0 3px rgba(217,83,56,0.45), 0 4px 10px rgba(0,0,0,0.25)'
-    : '0 3px 8px rgba(0,0,0,0.22)';
-  btn.innerHTML = `<span>${meta.emoji}</span><span style="max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;">${step.fromName}</span>`;
+    ? '0 0 0 2px #C83228, 0 4px 10px rgba(0,0,0,0.25)'
+    : '0 2px 6px rgba(0,0,0,0.2)';
+  btn.innerHTML = `
+    <svg width="11" height="11" viewBox="0 0 ${fa.width} ${fa.height}" style="flex-shrink:0;">
+      <path d="${fa.path}" fill="#FFFFFF" />
+    </svg>
+    <span style="max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${step.fromName}</span>
+  `;
   return btn;
-}
-
-function createClimatePillElement(
-  layer: WeatherLayerType,
-  station: ClimateDaySnapshot['stations'][number]
-): HTMLDivElement {
-  const el = document.createElement('div');
-  const color = getLayerColor(layer, station);
-  const label = formatLayerPill(layer, station);
-  el.title = `${station.name} (${station.region}) — ${station.tempMeanC}°C | Pluie ${station.precipitationMm}mm | Neige ${station.snowfallCm}cm | Momiji ${station.momijiScore}%`;
-  el.style.backgroundColor = color;
-  el.style.color = '#FFFFFF';
-  el.style.border = '1.5px solid rgba(253,249,242,0.92)';
-  el.style.borderRadius = '9999px';
-  el.style.padding = '2px 7px';
-  el.style.fontSize = '11px';
-  el.style.fontWeight = '700';
-  el.style.lineHeight = '1.25';
-  el.style.boxShadow = '0 2px 6px rgba(30,20,15,0.22)';
-  el.style.whiteSpace = 'nowrap';
-  el.style.pointerEvents = 'auto';
-  el.textContent = `${station.name} ${label}`;
-  return el;
 }
 
 export function JapanMap({
@@ -171,14 +200,46 @@ export function JapanMap({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
+  const [prefectures, setPrefectures] = useState<PrefectureCollection | null>(
+    null
+  );
+  const [hoveredZone, setHoveredZone] = useState<{
+    name: string;
+    valueLabel: string;
+    details: string;
+  } | null>(null);
+
   const activityMarkersRef = useRef<maplibregl.Marker[]>([]);
   const stepMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const climateMarkersRef = useRef<maplibregl.Marker[]>([]);
 
   const pickModeRef = useRef(pickMode);
   const onClickCoordsRef = useRef(onMapClickCoordinates);
   pickModeRef.current = pickMode;
   onClickCoordsRef.current = onMapClickCoordinates;
+
+  // Load 47-prefecture simplified GeoJSON once for clean regional zoning
+  useEffect(() => {
+    fetch('/data/japan-prefectures.json')
+      .then((r) => r.json())
+      .then((geo: PrefectureCollection) => {
+        const enriched: PrefectureCollection = {
+          type: 'FeatureCollection',
+          features: geo.features.map((f) => {
+            const [cLng, cLat] = computePolygonCentroid(f.geometry);
+            return {
+              ...f,
+              properties: {
+                ...f.properties,
+                centroidLat: cLat,
+                centroidLng: cLng,
+              },
+            };
+          }),
+        };
+        setPrefectures(enriched);
+      })
+      .catch(() => {});
+  }, []);
 
   // Initialize MapLibre once
   useEffect(() => {
@@ -205,34 +266,33 @@ export function JapanMap({
       map.on('load', () => {
         if (disposed || !map) return;
 
-        // Show full Japan (Okinawa -> Hokkaido) on first paint
         map.fitBounds(JAPAN_INITIAL_BOUNDS, {
-          padding: { top: 76, bottom: 105, left: 32, right: 32 },
+          padding: { top: 96, bottom: 105, left: 32, right: 32 },
           duration: 0,
         });
 
-        // Climate radial glow source/layer
-        map.addSource(CLIMATE_SOURCE_ID, {
+        // 47-Prefecture regional zoning choropleth source & layers
+        map.addSource(ZONING_SOURCE_ID, {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
         });
         map.addLayer({
-          id: CLIMATE_LAYER_ID,
-          type: 'circle',
-          source: CLIMATE_SOURCE_ID,
+          id: ZONING_FILL_LAYER_ID,
+          type: 'fill',
+          source: ZONING_SOURCE_ID,
           paint: {
-            'circle-radius': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              4,
-              32,
-              8,
-              90,
-            ],
-            'circle-color': ['get', 'color'],
-            'circle-opacity': 0.34,
-            'circle-blur': 0.85,
+            'fill-color': ['get', 'color'],
+            'fill-opacity': 0.56,
+          },
+        });
+        map.addLayer({
+          id: ZONING_LINE_LAYER_ID,
+          type: 'line',
+          source: ZONING_SOURCE_ID,
+          paint: {
+            'line-color': '#FFFFFF',
+            'line-width': 0.9,
+            'line-opacity': 0.85,
           },
         });
 
@@ -251,10 +311,26 @@ export function JapanMap({
           },
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': ['case', ['get', 'isToday'], 4.5, 2.8],
-            'line-opacity': ['case', ['get', 'reached'], 0.92, 0.38],
+            'line-width': ['case', ['get', 'isToday'], 4, 2.5],
+            'line-opacity': ['case', ['get', 'reached'], 0.92, 0.35],
             'line-dasharray': [2, 1.4],
           },
+        });
+
+        map.on('mousemove', ZONING_FILL_LAYER_ID, (e) => {
+          const props = e.features?.[0]?.properties as
+            | { name?: string; valueLabel?: string; details?: string }
+            | undefined;
+          if (props?.name && props.valueLabel) {
+            setHoveredZone({
+              name: props.name,
+              valueLabel: props.valueLabel,
+              details: props.details ?? '',
+            });
+          }
+        });
+        map.on('mouseleave', ZONING_FILL_LAYER_ID, () => {
+          setHoveredZone(null);
         });
 
         setMapReady(true);
@@ -292,7 +368,7 @@ export function JapanMap({
     map.flyTo({
       center: [focusTarget.lng, focusTarget.lat],
       zoom: focusTarget.zoom ?? Math.max(map.getZoom(), 12.5),
-      duration: 950,
+      duration: 900,
     });
   }, [focusTarget, mapReady]);
 
@@ -402,52 +478,54 @@ export function JapanMap({
     });
   }, [steps, activeDate, mode, mapReady, onSelectStep]);
 
-  // Sync Weather / Momiji Layer
+  // Sync 47-prefecture regional zoning choropleth layer
   useEffect(() => {
-    climateMarkersRef.current.forEach((m) => m.remove());
-    climateMarkersRef.current = [];
-
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const climateSource = map.getSource(CLIMATE_SOURCE_ID) as
+    const zoningSource = map.getSource(ZONING_SOURCE_ID) as
       | maplibregl.GeoJSONSource
       | undefined;
 
-    if (mode !== 'planning' || !activeLayer || !climateSnapshot) {
-      climateSource?.setData({ type: 'FeatureCollection', features: [] });
+    if (
+      mode !== 'planning' ||
+      !activeLayer ||
+      !climateSnapshot ||
+      !prefectures
+    ) {
+      setHoveredZone(null);
+      zoningSource?.setData({ type: 'FeatureCollection', features: [] });
       return;
     }
 
-    const glowFeatures: GeoJSON.Feature<GeoJSON.Point>[] =
-      climateSnapshot.stations.map((st) => ({
-        type: 'Feature',
-        properties: {
-          color: getLayerColor(activeLayer, st),
-        },
-        geometry: {
-          type: 'Point',
-          coordinates: [st.lng, st.lat],
-        },
-      }));
+    const features: PrefectureFeature[] = prefectures.features.map((f) => {
+      const cLat = f.properties.centroidLat ?? 36;
+      const cLng = f.properties.centroidLng ?? 138;
+      const val = interpolateClimateAt(cLat, cLng, climateSnapshot.stations);
+      const color = getLayerColor(activeLayer, val);
+      const valueLabel = formatLayerPill(activeLayer, val);
+      const details = `${val.tempMeanC}°C • Pluie ${val.precipitationMm}mm • Neige ${val.snowfallCm}cm • Momiji ${val.momijiScore}%`;
 
-    climateSource?.setData({
-      type: 'FeatureCollection',
-      features: glowFeatures,
+      return {
+        ...f,
+        properties: {
+          ...f.properties,
+          color,
+          valueLabel,
+          details,
+        },
+      };
     });
 
-    for (const st of climateSnapshot.stations) {
-      const el = createClimatePillElement(activeLayer, st);
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([st.lng, st.lat])
-        .addTo(map);
-      climateMarkersRef.current.push(marker);
-    }
-  }, [mode, activeLayer, climateSnapshot, mapReady]);
+    zoningSource?.setData({
+      type: 'FeatureCollection',
+      features: features as unknown as GeoJSON.Feature[],
+    });
+  }, [mode, activeLayer, climateSnapshot, prefectures, mapReady]);
 
   function handleResetJapanView() {
     mapRef.current?.fitBounds(JAPAN_INITIAL_BOUNDS, {
-      padding: { top: 76, bottom: 105, left: 32, right: 32 },
+      padding: { top: 96, bottom: 105, left: 32, right: 32 },
       duration: 750,
     });
   }
@@ -458,8 +536,23 @@ export function JapanMap({
 
       {/* Pick-on-map helper banner */}
       {pickMode && (
-        <div className="pointer-events-none fixed left-1/2 top-20 z-30 -translate-x-1/2 rounded-full bg-[#D95338] px-4 py-1.5 text-xs font-semibold text-white shadow-lg">
-          Cliquez n’importe où au Japon pour placer le point
+        <div className="pointer-events-none fixed left-1/2 top-24 z-30 -translate-x-1/2 rounded-md bg-[#C83228] px-3.5 py-1.5 text-xs font-medium text-white shadow-md">
+          Cliquez sur la carte du Japon pour placer le point
+        </div>
+      )}
+
+      {/* Prefecture zoning hover tooltip */}
+      {mode === 'planning' && hoveredZone && (
+        <div className="pointer-events-none fixed right-3 top-[64px] z-20 rounded-lg border border-zinc-200 bg-white/95 px-3 py-2 shadow-md backdrop-blur-md sm:right-4">
+          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-zinc-900">
+            <span>{hoveredZone.name}</span>
+            <span className="rounded-md bg-[#C83228]/10 px-1.5 py-0.5 text-[#C83228]">
+              {hoveredZone.valueLabel}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">
+            {hoveredZone.details}
+          </div>
         </div>
       )}
 
@@ -468,7 +561,7 @@ export function JapanMap({
         <button
           type="button"
           onClick={() => mapRef.current?.zoomIn({ duration: 220 })}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#DFCBB7] bg-[#FDF9F2]/95 text-[#3B2B22] shadow-md backdrop-blur-md transition hover:bg-[#F5EADC]"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white/95 text-zinc-800 shadow-sm backdrop-blur-md transition hover:bg-zinc-100"
           title="Zoomer"
         >
           <Plus className="h-4 w-4" />
@@ -476,7 +569,7 @@ export function JapanMap({
         <button
           type="button"
           onClick={() => mapRef.current?.zoomOut({ duration: 220 })}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#DFCBB7] bg-[#FDF9F2]/95 text-[#3B2B22] shadow-md backdrop-blur-md transition hover:bg-[#F5EADC]"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white/95 text-zinc-800 shadow-sm backdrop-blur-md transition hover:bg-zinc-100"
           title="Dézoomer"
         >
           <Minus className="h-4 w-4" />
@@ -484,8 +577,8 @@ export function JapanMap({
         <button
           type="button"
           onClick={handleResetJapanView}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#DFCBB7] bg-[#FDF9F2]/95 text-[#D95338] shadow-md backdrop-blur-md transition hover:bg-[#F5EADC]"
-          title="Vue complète du Japon (Okinawa à Hokkaido)"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white/95 text-[#C83228] shadow-sm backdrop-blur-md transition hover:bg-zinc-100"
+          title="Vue complète du Japon"
         >
           <LocateFixed className="h-4 w-4" />
         </button>

@@ -232,7 +232,7 @@ export function interpolateClimateAt(
 
   for (const st of stations) {
     const d2 = (lat - st.lat) ** 2 + (lng - st.lng) ** 2;
-    const w = 1 / Math.max(0.02, d2);
+    const w = 1 / Math.max(0.002, d2);
     weightSum += w;
     tempMean += st.tempMeanC * w;
     tempMin += st.tempMinC * w;

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getTripDays, isInsideJapan } from '../japan-bounds.ts';
-import { computeMomijiForDate, JAPAN_STATIONS } from '../japan-climate.ts';
+import {
+  computeMomijiForDate,
+  interpolateClimateAt,
+  JAPAN_STATIONS,
+} from '../japan-climate.ts';
 import {
   ActivitySchema,
   createDefaultTripData,
@@ -70,4 +74,29 @@ test('TripData and Activity schemas enforce max 10 links and valid ratings', () 
   };
 
   assert.equal(ActivitySchema.safeParse(badActivity).success, false);
+});
+
+test('interpolateClimateAt produces smooth regional values from stations', () => {
+  const sampleStations = JAPAN_STATIONS.map((s) => ({
+    id: s.id,
+    name: s.name,
+    region: s.region,
+    lat: s.lat,
+    lng: s.lng,
+    tempMeanC: s.baselineNovTempC,
+    tempMinC: s.baselineNovTempC - 4,
+    tempMaxC: s.baselineNovTempC + 4,
+    precipitationMm: 2,
+    snowfallCm: s.lat > 41 ? 5 : 0,
+    momijiScore: s.id === 'kyoto' ? 95 : 40,
+    momijiPhase: 'debut' as const,
+  }));
+
+  const kyotoZone = interpolateClimateAt(35.01, 135.77, sampleStations);
+  assert.ok(kyotoZone.tempMeanC > 11 && kyotoZone.tempMeanC < 14);
+  assert.ok(kyotoZone.momijiScore >= 85);
+
+  const sapporoZone = interpolateClimateAt(43.06, 141.35, sampleStations);
+  assert.ok(sapporoZone.tempMeanC < 6);
+  assert.ok(sapporoZone.snowfallCm > 3);
 });
